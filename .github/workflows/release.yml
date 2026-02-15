@@ -1,0 +1,33 @@
+name: Build and Upload RPM
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          dnf install -y rpm-build python3-devel gcc python3-pip tar sed systemd-rpm-macros
+          pip install -r requirements.txt
+
+      - name: Run Build Script
+        run: |
+          chmod +x compile.sh
+          chmod +x vars.sh
+          ./compile.sh --releaseVer ${{ github.event.release.tag_name }}
+
+      - name: Upload RPM to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rpm/.result/*.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

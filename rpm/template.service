@@ -1,0 +1,25 @@
+[Unit]
+Description=Linux L-Connect Wireless
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/@ALIAS@/@NAME@d
+Restart=always
+RestartSec=1
+
+DynamicUser=yes
+User=@ALIAS@
+Group=@ALIAS@
+SupplementaryGroups=wheel
+
+RuntimeDirectory=@NAME@
+RuntimeDirectoryMode=0755
+KillMode=control-group
+
+# Clean, predictable logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
