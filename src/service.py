@@ -181,14 +181,16 @@ def list_fans(rx: usb.core.Device, target_pwm: int):
 # ==============================
 def get_cpu_temp():
     temps = psutil.sensors_temperatures()
+    tctl = None
     values = []
 
     for _, entries in temps.items():
         for e in entries:
             if e.current is not None:
+                if e.label == "Tctl": tctl = e.current
                 values.append(e.current)
 
-    return max(values) if values else None
+    return tctl if tctl else (max(values) if values else None)
 
 # ==============================
 # TEMP → PWM
@@ -239,7 +241,6 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
     last_temp = None
     last_target_update = 0
 
-    # Per-device state
     last_pwm_step_time = {}
     last_fans_amount = 0;
 
