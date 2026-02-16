@@ -114,8 +114,8 @@ if __name__ == "__main__":
     is_monitor = args.command == "monitor" or args.command is None
     check_update(wait=is_monitor)
 
-    if args.command == "help":
-        parser.print_help()
+    if is_monitor:
+        run_monitor()
     elif args.command == "status":
         run_systemctl("status")
     elif args.command == "start":
@@ -124,7 +124,5 @@ if __name__ == "__main__":
         run_systemctl("stop")
     elif args.command == "restart":
         run_systemctl("restart")
-    elif args.command == "display":
-        run_monitor()
     else:
-        run_monitor()
+        parser.print_help()
