@@ -7,9 +7,11 @@ import usb.util
 import psutil
 import uvicorn
 from fastapi import FastAPI
-from utils import DEV_MODE, SOCKET_PATH, Fan, SystemStatus, VersionStatus
+from parseArg import extractVersion
+from utils import DEV_MODE, SOCKET_PATH, get_build_identity
+from models import Fan, SystemStatus, VersionInfo, VersionStatus
 from typing import List, Literal
-from vars import APP_NAME
+from vars import APP_NAME, APP_RAW_VERSION, APP_RC, APP_VERSION
 
 shared_state: SystemStatus = None
 
@@ -21,23 +23,81 @@ def update_state(temp: int, fans: List[Fan]):
             fans=fans
         )
 
-
-LATEST_VER = None
+LATEST_VER: VersionInfo = None
 LAST_VER_CHECK = 0.0
 
 def fetch_github_tag():
     global LATEST_VER
+    current_ver = extractVersion(APP_RAW_VERSION)
     repo = "Yoinky3000/LL-Connect-Wireless"
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    url = f"https://api.github.com/repos/{repo}/releases"
+
+    TEST_MODE = DEV_MODE and False 
+    test_releases = [
+        {"tag_name": "v1.2.1-rc9-rel3"},
+        {"tag_name": "1.1.0-rel5"},
+        {"tag_name": "1.1.0-rc2-rel1"},
+    ]
+
+    print(f"Current Version: {APP_RAW_VERSION}")
+    print(f"- SEMVER: {current_ver.semver}")
+    print(f"- Release Candidate: {current_ver.rc}")
+    print(f"- Build Release: {current_ver.release}")
+
     try:
-        import httpx 
-        with httpx.Client(timeout=5.0) as client:
-            response = client.get(url)
-            if response.status_code == 200:
-                LATEST_VER = response.json()["tag_name"].lstrip('v')
-                print(f"Latest Version Fetched: {LATEST_VER}")
+        if TEST_MODE:
+            release_res = test_releases
+        else:
+            import httpx 
+            with httpx.Client(timeout=5.0) as client:
+                response = client.get(url)
+                if response.status_code == 200:
+                    release_res = response.json()
+                else:
+                    release_res = None
+
+        if not release_res:
+            LATEST_VER = current_ver
+            return
+        
+        releases: List[VersionInfo] = []
+        dist, arch, ext = get_build_identity()
+        match_pattern = f"{dist}.{arch}{ext}"
+        for r in release_res:
+            assets = r.get("assets", [])
+            installer_url=None 
+            for asset in assets:
+                if match_pattern in asset["name"]:
+                    installer_url = asset["browser_download_url"]
+                    break
+            releases.append(extractVersion(raw_tag=r["tag_name"].lstrip('v'), release_note=r.get("body", "No release notes provided."), installer_url=installer_url))
+
+        if APP_RC == 0:
+            for r in releases:
+                if not r.rc:
+                    LATEST_VER = r
+                    break
+        else:
+            for r in releases:
+                if r.rc == 0:
+                    LATEST_VER = r
+                    break
+                
+                if r.semver == APP_VERSION and r.rc > 0:
+                    LATEST_VER = r
+                    break
+        
+        if LATEST_VER:
+            print(f"Remote Version Fetched: {LATEST_VER.raw_tag}")
+            print(f"- SEMVER: {LATEST_VER.semver}")
+            print(f"- Release Candidate: {LATEST_VER.rc}")
+            print(f"- Build Release: {LATEST_VER.release}")
+        else:
+            LATEST_VER = current_ver
+
     except Exception as e:
         print(f"Failed to fetch latest tag: {e}")
+        LATEST_VER = current_ver
 
 
 # ==============================
@@ -51,13 +111,33 @@ async def get_status():
 
 @app.get("/version", response_model=VersionStatus)
 async def get_version():
-    global LAST_VER_CHECK
+    global LAST_VER_CHECK, LATEST_VER
     now = time.time()
-    checked = (now - LAST_VER_CHECK) <= 3600
-    response = VersionStatus(latest_ver=LATEST_VER, checked=checked)
-    if not checked:
-        LAST_VER_CHECK = now
-    return response
+    
+    
+    new_ver = LATEST_VER.semver > APP_VERSION
+    graduation = (LATEST_VER.semver == APP_VERSION and APP_RC > 0 and LATEST_VER.rc == 0)
+    new_rc = (LATEST_VER.semver == APP_VERSION and LATEST_VER.rc > APP_RC)
+    
+    outdated = new_ver or graduation or new_rc
+    
+    is_stale = (now - LAST_VER_CHECK) > 3600
+    
+    notified = True
+    if outdated:
+        if is_stale:
+            notified = False
+            LAST_VER_CHECK = now
+        else:
+            notified = True
+    else:
+        notified = True
+
+    return VersionStatus(
+        data=LATEST_VER,
+        notified=notified,
+        outdated=outdated
+    )
 
 @app.get("/")
 async def root():
@@ -385,7 +465,7 @@ if __name__ == "__main__":
         fans = list_fans(rx, 0)
         displayDetected(fans)
 
-        time.sleep(1)
+        time.sleep(5 if DEV_MODE else 0)
         
         fan_control_loop(rx, tx)
 

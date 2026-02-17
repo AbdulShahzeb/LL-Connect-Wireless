@@ -2,7 +2,7 @@
 set -e
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source $ROOT_DIR/vars.sh "$@"
+source "$ROOT_DIR/vars.sh" "$@"
 
 SRC_DIR="$ROOT_DIR/src"
 RPM_DIR="$ROOT_DIR/rpm"
@@ -12,7 +12,8 @@ BUILDROOT="$RPM_DIR/.artifacts"
 DIST_DIR="$BUILDROOT/dist"
 
 echo "==> Building $NAME"
-echo "==> Version:    $VERSION"
+echo "==> Version:    $COMPILE_VER"
+echo "==> Release:    $RELEASE"
 echo "==> Alias:      $ALIAS"
 echo "==> Directory:  $ROOT_DIR"
 sleep 1
@@ -48,19 +49,21 @@ echo "==> Preparing RPM source tree"
 
 sed \
   -e "s/@NAME@/$NAME/g" \
-  -e "s/@VERSION@/$VERSION/g" \
+  -e "s/@VERSION@/$COMPILE_VER/g" \
   -e "s/@ALIAS@/$ALIAS/g" \
+  -e "s/@RELEASE@/$RELEASE/g" \
   $RPM_DIR/template.service \
   > $PKG_DIR/$NAME.service
 sed \
   -e "s/@NAME@/$NAME/g" \
-  -e "s/@VERSION@/$VERSION/g" \
+  -e "s/@VERSION@/$COMPILE_VER/g" \
   -e "s/@ALIAS@/$ALIAS/g" \
+  -e "s/@RELEASE@/$RELEASE/g" \
   $RPM_DIR/template.spec \
   > $PKG_DIR/$NAME.spec
 cp $RPM_DIR/llcw.rules $PKG_DIR/$NAME.rules
 
-SRCROOT="$BUILDROOT/$NAME-$VERSION"
+SRCROOT="$BUILDROOT/$NAME-$COMPILE_VER"
 mkdir -p "$SRCROOT"
 
 cp -a "$DIST_DIR" "$SRCROOT/"
@@ -68,13 +71,13 @@ cp -a "$PKG_DIR" "$SRCROOT/"
 cp $ROOT_DIR/README.md "$SRCROOT/"
 cp $ROOT_DIR/LICENSE "$SRCROOT/"
 
-tar czf "$PKG_DIR/$NAME-$VERSION.tar.gz" -C "$BUILDROOT" "$NAME-$VERSION"
+tar czf "$PKG_DIR/$NAME-$COMPILE_VER.tar.gz" -C "$BUILDROOT" "$NAME-$COMPILE_VER"
 
 echo "==> Installing source tarball into rpmbuild"
 
 
 mkdir -p ~/rpmbuild/SOURCES ~/rpmbuild/SPECS
-cp "$PKG_DIR/$NAME-$VERSION.tar.gz" ~/rpmbuild/SOURCES/
+cp "$PKG_DIR/$NAME-$COMPILE_VER.tar.gz" ~/rpmbuild/SOURCES/
 cp "$PKG_DIR/$NAME.spec" ~/rpmbuild/SPECS/
 
 echo "==> Building RPM"

@@ -3,8 +3,9 @@ import time
 import argparse
 import subprocess
 import httpx
-from utils import SOCKET_PATH, SystemStatus, VersionStatus
-from vars import APP_VERSION, APP_NAME, APP_ALIAS
+from utils import SOCKET_PATH, get_build_identity
+from models import SystemStatus, VersionInfo, VersionStatus
+from vars import APP_RAW_VERSION, APP_NAME, APP_ALIAS
 
 def clear_console():
     sys.stdout.write("\033[H\033[J")
@@ -19,7 +20,7 @@ def fetch_state() -> SystemStatus:
 
 def render(status: SystemStatus):
     clear_console()
-    print(f"LLCW CLI (Version: {APP_VERSION})\n\n")
+    print(f"LL-Connect-Wireless Monitor\n\n")
 
     print(f"CPU Temp: {status.cpu_temp:.1f} °C\n")
     print(f"{'Fan Address':17} | Fans | Cur % | Tgt % | RPM")
@@ -73,31 +74,114 @@ def run_systemctl(action: str):
     except KeyboardInterrupt:
         sys.exit(0)
 
-def check_update(wait = False):
+def run_info(remote_ver: VersionStatus | False):
+    try:
+        print("\033[1mLL-Connect-Wireless Information\033[0m")
+        print("-" * 30)
+        print(f"\033[1mCURRENT_VERSION:\033[0m {APP_RAW_VERSION}")
+        
+        if remote_ver:
+            v = remote_ver.data
+            print(f"\033[1mREMOTE_VERSION:\033[0m  {v.raw_tag}")
+        else: 
+            print(f"\033[1mREMOTE_VERSION:\033[0m  Unknown")
+        print("-" * 30)
+        print("\033[1mCHANGE_LOG:\033[0m")
+        print(getattr(v, 'release_note', "Run 'llcw update' to see full notes on GitHub."))
+        print("-" * 30)
+    except Exception as e:
+        print(f"Could not connect to daemon: {e}")
+
+def run_update(remote_ver: VersionStatus | False):
+    if not remote_ver:
+        print("Could not retrieve version information from the daemon.")
+        return
+
+    if not remote_ver.outdated:
+        print("You are already up to date.")
+        return
+    
+    url = remote_ver.data.installer_url
+    if not url:
+        print("\033[91mNo compatible installer found for your specific system architecture/distro.\033[0m")
+        return
+
+    dist_tag, arch, ext = get_build_identity()
+    tmp_path = f"/tmp/llcw_update{ext}"
+
+    print(f"\n\033[1mUpdate Found: {remote_ver.data.raw_tag}\033[0m")
+    print(f"Download URL: {url}")
+    print(f"Target Path:  {tmp_path}")
+    print("-" * 40)
+
+    confirm = input("Do you want to proceed with the download and installation? (y/N): ").lower()
+    if confirm != 'y':
+        print("Update cancelled.")
+        return
+
+    print(f"\nDownloading {url}...")
+    try:
+        with httpx.Client(follow_redirects=True) as client:
+            with client.stream("GET", url) as response:
+                response.raise_for_status()
+                with open(tmp_path, "wb") as f:
+                    for chunk in response.iter_bytes():
+                        f.write(chunk)
+        
+        print("Download complete. Starting installation...")
+        
+        if ext == ".rpm":
+            subprocess.run(["sudo", "dnf", "install", "-y", tmp_path], check=True)
+        elif ext == ".deb":
+            subprocess.run(["sudo", "apt", "install", "-y", tmp_path], check=True)
+        else:
+            print(f"\033[93mAutomatic installation not supported for {ext}.\033[0m")
+            print(f"Please install the file manually from: {tmp_path}")
+            return
+        print("\033[92mLL-Connect-Wireless updated successfully!\033[0m")
+
+    except httpx.HTTPError as e:
+        print(f"\033[91mDownload failed: {e}\033[0m")
+    except subprocess.CalledProcessError as e:
+        print(f"\033[91mInstallation failed: {e}\033[0m")
+    except Exception as e:
+        print(f"\033[91mAn unexpected error occurred: {e}\033[0m")
+
+def check_update():
     try:
         transport = httpx.HTTPTransport(uds=SOCKET_PATH)
         with httpx.Client(transport=transport) as client:
             resp = client.get("http://localhost/version")
             if resp.status_code == 200:
-                v_data = VersionStatus(**resp.json())
-
-                if v_data.latest_ver != "unknown" and v_data.latest_ver != APP_VERSION and not v_data.checked:
-                    print(f"\n\033[93m[!] UPDATE AVAILABLE: Version {v_data.latest_ver} is out!\033[0m")
-                    print(f"Current version: {APP_VERSION}")
-                    print("Download: https://github.com/Yoinky3000/LL-Connect-Wireless/releases\n")
-                    if wait: time.sleep(5)
+                remoteVer = VersionStatus(**resp.json())
+                return remoteVer
+            return False
     except Exception:
-        pass
+        return False
+
+def printOutdated(newVer: VersionInfo, wait = False):
+    display = newVer.semver
+    if newVer.rc:
+        display += f" (RC{newVer.rc})"
+    print(f"\n\033[93m[!] UPDATE AVAILABLE: Version {display} is out!\033[0m")
+    print(f"Current version: {APP_RAW_VERSION}")
+    print(f"Download: https://github.com/Yoinky3000/LL-Connect-Wireless/releases/tag/{newVer.raw_tag}\n")
+    if wait: 
+        time.sleep(5)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description=f"Linux L-Connect Wireless CLI (Version: {APP_VERSION})",
+        description=f"LL-Connect-Wireless (LLCW) CLI (Version: {APP_RAW_VERSION})",
         epilog=f"You can also use '{APP_NAME}' without arguments to see live monitor.\n\n'{APP_ALIAS}' is also an alias command to '{APP_NAME}'"
     )
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     subparsers.add_parser("help", help="same as -h/--help")
+
+    subparsers.add_parser("info", help="show app version info and changelog of llcw")
+
+    subparsers.add_parser("update", help="check and update llcw to latest version")
 
     subparsers.add_parser("status", help="show systemd service status")
 
@@ -107,15 +191,20 @@ if __name__ == "__main__":
 
     subparsers.add_parser("restart", help="restart the background daemon")
     
-    subparsers.add_parser("monitor", help="show live fan monitor")
+    subparsers.add_parser("monitor", help="show live fan monitor (Default to it if no command is provided)")
 
     args = parser.parse_args()
 
     is_monitor = args.command == "monitor" or args.command is None
-    check_update(wait=is_monitor)
+    remoteVer = check_update()
+    if (remoteVer and remoteVer.outdated and not remoteVer.notified and not args.command == "info"): printOutdated(remoteVer.data, is_monitor)
 
     if is_monitor:
         run_monitor()
+    elif args.command == "info":
+        run_info(remoteVer)
+    elif args.command == "update":
+        run_update(remoteVer)
     elif args.command == "status":
         run_systemctl("status")
     elif args.command == "start":

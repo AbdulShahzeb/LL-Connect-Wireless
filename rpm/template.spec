@@ -1,6 +1,6 @@
 Name:           @NAME@
 Version:        @VERSION@
-Release:        1%{?dist}
+Release:        @RELEASE@%{?dist}
 Summary:        Linux L-Connect Wireless daemon and CLI
 
 License:        MIT
