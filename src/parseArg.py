@@ -29,7 +29,7 @@ def extractVersion(raw_tag: str, release_note: str | None = None, installer_url:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--releaseVer", type=str, default=datetime.now().strftime("%Y%m%d.%H%M"))
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
 
     raw_tag = args.releaseVer
 

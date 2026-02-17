@@ -87,7 +87,7 @@ def run_info(remote_ver: VersionStatus | False):
             print(f"\033[1mREMOTE_VERSION:\033[0m  Unknown")
         print("-" * 30)
         print("\033[1mCHANGE_LOG:\033[0m")
-        print(getattr(v, 'release_note', "Run 'llcw update' to see full notes on GitHub."))
+        print(getattr(v, 'release_note', "You can run 'llcw update' to update to latest version from GitHub."))
         print("-" * 30)
     except Exception as e:
         print(f"Could not connect to daemon: {e}")
@@ -101,12 +101,17 @@ def run_update(remote_ver: VersionStatus | False):
         print("You are already up to date.")
         return
     
+    dist_tag, arch, ext = get_build_identity()
+    print(f"\033[1mYour System Info\033[0m -")
+    print(f"  Distribution Tag > {dist_tag}")
+    print(f"  Architecture > {arch}")
+    print(f"  Installer Extension > {ext}\n")
+    
     url = remote_ver.data.installer_url
     if not url:
         print("\033[91mNo compatible installer found for your specific system architecture/distro.\033[0m")
         return
 
-    dist_tag, arch, ext = get_build_identity()
     tmp_path = f"/tmp/llcw_update{ext}"
 
     print(f"\n\033[1mUpdate Found: {remote_ver.data.raw_tag}\033[0m")
