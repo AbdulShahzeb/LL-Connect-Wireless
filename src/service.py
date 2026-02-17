@@ -71,7 +71,6 @@ def fetch_github_tag():
                     installer_url = asset["browser_download_url"]
                     break
             releases.append(extractVersion(raw_tag=r["tag_name"].lstrip('v'), release_note=r.get("body", "No release notes provided."), installer_url=installer_url))
-
         if APP_RC == 0:
             for r in releases:
                 if not r.rc:
@@ -108,8 +107,8 @@ async def get_status():
 
 @app.get("/version", response_model=VersionStatus)
 async def get_version():
-    global LAST_VER_CHECK, LATEST_VER
     fetch_github_tag()
+    global LAST_VER_CHECK, LATEST_VER
     now = time.time()
     
     new_ver = LATEST_VER.semver > APP_VERSION
