@@ -1,4 +1,4 @@
-name: Build and Upload RPM
+name: New Release
 
 on:
   release:
@@ -8,30 +8,27 @@ permissions:
   contents: write
 
 jobs:
-  build-rpm:
+  run-build:
+    uses: ./.github/workflows/build.yml
+    with:
+      tag_name: ${{ github.event.release.tag_name }}
+
+  upload-to-release:
+    needs: run-build
     runs-on: ubuntu-latest
-    container:
-      image: fedora:latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          dnf install -y rpm-build python3-devel gcc python3-pip tar sed systemd-rpm-macros
-          pip install -r requirements.txt
+      - name: Fetch Installers
+        uses: actions/download-artifact@v4
+        with:
+          path: llcw
+          pattern: "*-*"
+          merge-multiple: true
 
-      - name: Run Build Script
-        run: |
-          chmod +x compile.sh
-          chmod +x vars.sh
-          ./compile.sh --releaseVer ${{ github.event.release.tag_name }}
-
-      - name: Upload RPM to Release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
+          files: llcw/*
           make_latest: true
-          files: rpm/.result/*.rpm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -2,7 +2,7 @@
 set -e
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$ROOT_DIR/vars.sh" "$@"
+source "$ROOT_DIR/../vars.sh" "$@"
 
 SRC_DIR="$ROOT_DIR/src"
 RPM_DIR="$ROOT_DIR/rpm"

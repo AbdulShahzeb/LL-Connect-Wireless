@@ -1,0 +1,40 @@
+name: "Build Installer"
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  fedora-rpm:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        fedora_ver: [42, 43]
+    container:
+      image: fedora:${{ matrix.fedora_ver }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          dnf install -y rpm-build python3-devel gcc python3-pip tar sed systemd-rpm-macros
+          pip install -r requirements.txt
+
+      - name: Run Build
+        run: |
+          chmod +x ./rpm/compile.sh
+          chmod +x vars.sh
+          ./rpm/compile.sh ${{ (inputs.tag_name != '' && format('--releaseVer {0}', inputs.tag_name)) || '' }}
+      
+      - name: Save Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fedora-${{ matrix.fedora_ver }}
+          path: rpm/.result/*.rpm
+          retention-days: 1
