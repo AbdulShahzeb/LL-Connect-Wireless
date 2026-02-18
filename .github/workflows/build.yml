@@ -1,4 +1,4 @@
-name: "Build Installer"
+name: Build Installer
 
 on:
   workflow_call:
