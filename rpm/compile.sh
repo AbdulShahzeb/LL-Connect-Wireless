@@ -29,21 +29,17 @@ echo "==> Building PyInstaller binaries"
 
 pyinstaller \
   --onefile \
-  --clean \
   --distpath "$DIST_DIR" \
-  --workpath "$BUILDROOT/pyinstaller-work" \
+  --workpath "$BUILDROOT/service-work" \
   --specpath "$BUILDROOT" \
   --name "${NAME}d" \
-  "$SRC_DIR/service.py"
-
-pyinstaller \
+  "$SRC_DIR/service.py" & pyinstaller \
   --onefile \
-  --clean \
   --distpath "$DIST_DIR" \
-  --workpath "$BUILDROOT/pyinstaller-work" \
+  --workpath "$BUILDROOT/cli-work" \
   --specpath "$BUILDROOT" \
   --name $NAME \
-  "$SRC_DIR/cli.py"
+  "$SRC_DIR/cli.py" & wait
 
 echo "==> Generating Auto Complete"
 
