@@ -8,11 +8,10 @@ import psutil
 import uvicorn
 from fastapi import FastAPI
 from parseArg import extractVersion
-from utils import DEV_MODE, SOCKET_PATH, get_build_identity
-from models import Fan, SystemStatus, VersionInfo, VersionStatus
+from utils import DEV_MODE, SOCKET_DIR, SOCKET_PATH, load_settings
+from models import Fan, LinearMode, SystemStatus
 from typing import List, Literal
-from vars import APP_NAME, APP_RAW_VERSION, APP_RC, APP_VERSION
-import httpx 
+from vars import APP_NAME, APP_RAW_VERSION
 
 shared_state: SystemStatus = None
 
@@ -24,77 +23,6 @@ def update_state(temp: int, fans: List[Fan]):
             fans=fans
         )
 
-LATEST_VER: VersionInfo = None
-LAST_VER_CHECK = 0.0
-LAST_VER_FETCH = 0.0
-
-def fetch_github_tag():
-    global LAST_VER_FETCH
-    global LATEST_VER
-    current_ver = extractVersion(APP_RAW_VERSION)
-    repo = "Yoinky3000/LL-Connect-Wireless"
-    url = f"https://api.github.com/repos/{repo}/releases"
-
-    TEST_MODE = DEV_MODE and False 
-    test_releases = [
-        {"tag_name": "v1.2.1-rc9-rel3"},
-        {"tag_name": "1.1.0-rel5"},
-        {"tag_name": "1.1.0-rc2-rel1"},
-    ]
-
-    try:
-        if TEST_MODE:
-            release_res = test_releases
-        else:
-            now = time.time()
-            if (now - LAST_VER_FETCH) < 75: return
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(url)
-                if response.status_code == 200:
-                    release_res = response.json()
-                else:
-                    release_res = None
-                LAST_VER_FETCH = time.time()
-
-        if not release_res:
-            LATEST_VER = current_ver
-            return
-        
-        releases: List[VersionInfo] = []
-        dist, arch, ext = get_build_identity()
-        match_pattern = f"{dist}.{arch}{ext}"
-        for r in release_res:
-            assets = r.get("assets", [])
-            installer_url=None 
-            for asset in assets:
-                if match_pattern in asset["name"]:
-                    installer_url = asset["browser_download_url"]
-                    break
-            releases.append(extractVersion(raw_tag=r["tag_name"].lstrip('v'), release_note=r.get("body", "No release notes provided."), installer_url=installer_url))
-        if APP_RC == 0:
-            for r in releases:
-                if not r.rc:
-                    LATEST_VER = r
-                    break
-        else:
-            for r in releases:
-                if r.rc == 0:
-                    LATEST_VER = r
-                    break
-                
-                if r.semver == APP_VERSION and r.rc > 0:
-                    LATEST_VER = r
-                    break
-        
-        if LATEST_VER:
-            return True
-        else:
-            LATEST_VER = current_ver
-
-    except Exception as e:
-        print(f"Failed to fetch latest tag: {e}")
-        LATEST_VER = current_ver
-
 
 # ==============================
 # SOCK SERVER
@@ -105,35 +33,11 @@ app = FastAPI()
 async def get_status():
     return shared_state
 
-@app.get("/version", response_model=VersionStatus)
-async def get_version():
-    fetch_github_tag()
-    global LAST_VER_CHECK, LATEST_VER
-    now = time.time()
-    
-    new_ver = LATEST_VER.semver > APP_VERSION
-    graduation = (LATEST_VER.semver == APP_VERSION and APP_RC > 0 and LATEST_VER.rc == 0)
-    new_rc = (LATEST_VER.semver == APP_VERSION and LATEST_VER.rc > APP_RC)
-    
-    outdated = new_ver or graduation or new_rc
-    
-    is_stale = (now - LAST_VER_CHECK) > 3600
-    
-    notified = True
-    if outdated:
-        if is_stale:
-            notified = False
-            LAST_VER_CHECK = now
-        else:
-            notified = True
-    else:
-        notified = True
-
-    return VersionStatus(
-        data=LATEST_VER,
-        notified=notified,
-        outdated=outdated
-    )
+@app.post("/reload-settings")
+async def reload_settings():
+    global SETTINGS
+    SETTINGS = load_settings()
+    return {"msg": "ok"}
 
 @app.get("/")
 async def root():
@@ -160,11 +64,12 @@ MAX_DEVICES_PAGE = 10
 # ==============================
 # USER CONFIG
 # ==============================
-MIN_PWM = 20
-MAX_PWM = 175
+# MIN_PWM = 20
+# MAX_PWM = 175
 
-MIN_TEMP = 35.0
-MAX_TEMP = 85.0
+# MIN_TEMP = 35.0
+# MAX_TEMP = 85.0
+SETTINGS = load_settings()
 
 DAMPING_SECOND = 2.0
 DAMPING_TEMP   = 1.0
@@ -173,7 +78,7 @@ PWM_STEP = 4
 PWM_STEP_INTERVAL = 0.5
 
 
-LOOP_INTERVAL  = 0.5
+LOOP_INTERVAL  = 1
 
 # ==============================
 # UTILS
@@ -299,10 +204,20 @@ def get_cpu_temp():
 # ==============================
 # TEMP → PWM
 # ==============================
-def temp_to_pwm(temp):
-    t = clamp(temp, MIN_TEMP, MAX_TEMP)
-    ratio = (t - MIN_TEMP) / (MAX_TEMP - MIN_TEMP)
-    return int(MIN_PWM + ratio * (MAX_PWM - MIN_PWM))
+def temp_to_pwm(temp: float, linear: LinearMode):
+    t = clamp(temp, linear.min_temp, linear.max_temp)
+
+    delta = linear.max_temp - linear.min_temp
+    if delta <= 0:
+        return int(linear.min_pwm / 100 * 255)
+
+    ratio = (t - linear.min_temp) / delta
+
+    pwm_percent = linear.min_pwm + ratio * (linear.max_pwm - linear.min_pwm)
+
+    pwm_percent = clamp(pwm_percent, 0, 100)
+
+    return int(round(pwm_percent / 100 * 255))
 
 def approach_pwm(current, target, step):
     if current < target:
@@ -342,6 +257,7 @@ def build_data(fan: Fan, seq):
 # MAIN LOOP
 # ==============================
 def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
+    global SETTINGS
     last_temp = None
     last_target_update = 0
 
@@ -357,17 +273,19 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
                 time.sleep(1)
                 continue
 
-            target_pwm = temp_to_pwm(temp)
+            target_pwm = temp_to_pwm(temp, SETTINGS.linear)
 
             if (
                 last_temp is None or
-                abs(temp - last_temp) >= DAMPING_TEMP and
-                now - last_target_update >= DAMPING_SECOND
+                (
+                    abs(temp - last_temp) >= DAMPING_TEMP and
+                    now - last_target_update >= DAMPING_SECOND
+                )
             ):
                 last_temp = temp
                 last_target_update = now
             else:
-                target_pwm = temp_to_pwm(last_temp)
+                target_pwm = temp_to_pwm(last_temp, SETTINGS.linear)
 
             fans = list_fans(rx, target_pwm)
 
@@ -394,7 +312,7 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
                 for i in range(len(fans)):
                     tx.write(USB_OUT, build_data(f, i))
                     update_state(temp, fans)
-                time.sleep(0.5)
+                time.sleep(0.1)
 
             if DEV_MODE:
                 clear_console()
@@ -422,7 +340,7 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
                     f"{rpm}"
                 )
             err = 0
-        except:
+        except Exception:
             if err > 3:
                 raise Exception()
             else:
@@ -444,12 +362,6 @@ if __name__ == "__main__":
         print(f"- SEMVER: {current_ver.semver}")
         print(f"- Release Candidate: {current_ver.rc}")
         print(f"- Build Release: {current_ver.release}")
-        res = fetch_github_tag()
-        if res:
-            print(f"Remote Version Fetched: {LATEST_VER.raw_tag}")
-            print(f"- SEMVER: {LATEST_VER.semver}")
-            print(f"- Release Candidate: {LATEST_VER.rc}")
-            print(f"- Build Release: {LATEST_VER.release}")
         print(f"Start sock server at {SOCKET_PATH}")
         api_thread = threading.Thread(target=start_api_server, daemon=True)
         api_thread.start()

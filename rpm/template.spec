@@ -45,28 +45,20 @@ install -Dm644 dist/@ALIAS@.bash %{buildroot}/usr/share/bash-completion/completi
 
 # systemd service
 install -D -m 644 .packaging/@NAME@.service \
-    %{buildroot}/usr/lib/systemd/system/@NAME@.service
+    %{buildroot}/usr/lib/systemd/user/@NAME@.service
 
 # udev rule
 install -D -m 644 .packaging/@NAME@.rules \
     %{buildroot}/usr/lib/udev/rules.d/99-@NAME@.rules
 
 %post
-%systemd_post @NAME@.service
 udevadm control --reload-rules || :
 udevadm trigger || :
-systemctl enable --now @NAME@.service || :
 
-
-%preun
-%systemd_preun @NAME@.service
 
 %postun
-%systemd_postun_with_restart @NAME@.service
 udevadm control --reload-rules || :
 udevadm trigger || :
-systemctl reset-failed @NAME@.service || :
-systemctl daemon-reload || :
 
 
 %files
@@ -80,7 +72,7 @@ systemctl daemon-reload || :
 /usr/share/zsh/site-functions/_@ALIAS@
 /usr/share/bash-completion/completions/@NAME@
 /usr/share/bash-completion/completions/@ALIAS@
-/usr/lib/systemd/system/@NAME@.service
+/usr/lib/systemd/user/@NAME@.service
 /usr/lib/udev/rules.d/99-@NAME@.rules
 
 

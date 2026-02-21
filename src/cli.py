@@ -1,11 +1,12 @@
+import shutil
 import sys
 import time
 import argparse
 import subprocess
 from typing import Optional
 import httpx
-from utils import SOCKET_PATH, get_build_identity
-from models import SystemStatus, VersionInfo, VersionStatus
+from utils import CACHE_DIR, CONFIG_DIR, SOCKET_PATH, check_latest_version, get_build_identity, load_settings, parse_curve_input, save_settings
+from models import FanMode, Settings, SystemStatus, VersionInfo, VersionStatus
 from vars import APP_RAW_VERSION, APP_NAME, APP_ALIAS
 import shtab
 
@@ -19,6 +20,11 @@ def fetch_state() -> SystemStatus:
         resp = client.get("http://localhost/status")
         resp.raise_for_status()
         return SystemStatus(**resp.json())
+    
+def reload_service_settings():
+    transport = httpx.HTTPTransport(uds=SOCKET_PATH)
+    with httpx.Client(transport=transport) as client:
+        client.post("http://localhost/reload-settings")
 
 def render(status: SystemStatus):
     clear_console()
@@ -61,8 +67,8 @@ def run_systemctl(action: str):
     service_name = f"{APP_NAME}.service"
     
     try:
-        print(f"Running: systemctl {action} {service_name}...")
-        subprocess.run(["systemctl", action, service_name], check=False)
+        print(f"Running: systemctl --user {action} {service_name}...")
+        subprocess.run(["systemctl", "--user", action, service_name], check=False)
         print("Done.")
     except subprocess.CalledProcessError as e:
         print(f"Error executing command: {e}")
@@ -151,18 +157,6 @@ def run_update(remote_ver: Optional[VersionStatus]):
     except Exception as e:
         print(f"\033[91mAn unexpected error occurred: {e}\033[0m")
 
-def check_update() -> Optional[VersionStatus]:
-    try:
-        transport = httpx.HTTPTransport(uds=SOCKET_PATH)
-        with httpx.Client(transport=transport) as client:
-            resp = client.get("http://localhost/version")
-            if resp.status_code == 200:
-                remoteVer = VersionStatus(**resp.json())
-                return remoteVer
-            return None
-    except Exception:
-        return None
-
 def printOutdated(newVer: VersionInfo, wait = False):
     display = newVer.semver
     if newVer.rc:
@@ -173,6 +167,47 @@ def printOutdated(newVer: VersionInfo, wait = False):
     print(f"Or you can download from: https://github.com/Yoinky3000/LL-Connect-Wireless/releases/tag/{newVer.raw_tag}\n")
     if wait: 
         time.sleep(5)
+
+def show_settings(settings: Settings):
+    print("\033[1mCurrent Settings\033[0m")
+    print("-" * 30)
+    print(f"Mode: {settings.mode}")
+    print()
+    print("Linear Mode:")
+    print(f"  Min Temp : {settings.linear.min_temp} °C")
+    print(f"  Max Temp : {settings.linear.max_temp} °C")
+    print(f"  Min PWM  : {settings.linear.min_pwm}%")
+    print(f"  Max PWM  : {settings.linear.max_pwm}%")
+    print("-" * 30)
+
+
+def show_linear_settings(settings: Settings):
+    print("\033[1mLinear Mode Settings\033[0m")
+    print("-" * 30)
+    print(f"Min Temp : {settings.linear.min_temp} °C")
+    print(f"Max Temp : {settings.linear.max_temp} °C")
+    print(f"Min PWM  : {settings.linear.min_pwm}%")
+    print(f"Max PWM  : {settings.linear.max_pwm}%")
+    print("-" * 30)
+
+def run_uninstall():
+    dist_tag, arch, ext = get_build_identity()
+    service_name = f"{APP_NAME}.service"
+
+    print("Stopping service...")
+    run_systemctl("stop")
+    run_systemctl("disable")
+
+    confirm = input("Remove configuration and cache files? (y/N): ").lower()
+    if confirm == "y":
+        shutil.rmtree(CONFIG_DIR, ignore_errors=True)
+        shutil.rmtree(CACHE_DIR, ignore_errors=True)
+        print("Configuration removed.")
+
+    confirm = input("Remove the package using dnf? (y/N): ").lower()
+    if confirm == "y":
+        if ext == ".rpm":
+            subprocess.run(["sudo", "dnf", "remove", "-y", APP_NAME], check=True)
 
 if __name__ == "__main__":
     try:
@@ -191,13 +226,36 @@ if __name__ == "__main__":
 
         subparsers.add_parser("status", help="show systemd service status")
 
-        subparsers.add_parser("start", help="start the background daemon")
+        subparsers.add_parser("enable", help="enable llcw service and start it")
 
-        subparsers.add_parser("stop", help="stop the background daemon")
+        subparsers.add_parser("disable", help="disable llcw service")
 
-        subparsers.add_parser("restart", help="restart the background daemon")
+        subparsers.add_parser("start", help="start the llcw service")
+
+        subparsers.add_parser("stop", help="stop the llcw service")
+
+        subparsers.add_parser("restart", help="restart the llcw service")
         
         subparsers.add_parser("monitor", help="show live fan monitor (Default to it if no command is provided)")
+
+        subparsers.add_parser("uninstall", help="Stop, disable and remove llcw")
+
+        settings_parser = subparsers.add_parser("settings", help="Manage configuration")
+        settings_sub = settings_parser.add_subparsers(dest="settings_cmd")
+        settings_sub.add_parser(
+            "set-mode",
+            help="Set control mode"
+        ).add_argument(
+            "mode",
+            choices=[m.value for m in FanMode],
+            help="Control mode"
+        )
+        
+        linear_parser = settings_sub.add_parser("linear", help="Linear mode settings")
+        linear_sub = linear_parser.add_subparsers(dest="linear_cmd")
+
+        linear_set = linear_sub.add_parser("set-curve", help="Set linear curve")
+        linear_set.add_argument("curve", help="Format: 'minT:minP,maxT:maxP', or just give a single pwm percentage for fixed pwm")
 
         parser.add_argument(
             "--print-completion",
@@ -212,24 +270,54 @@ if __name__ == "__main__":
             sys.exit(0)
 
         is_monitor = args.command == "monitor" or args.command is None
-        remoteVer = check_update()
+        remoteVer = check_latest_version()
         if (remoteVer and remoteVer.outdated and not remoteVer.notified and not args.command == "info" and not args.command == "update"):
             printOutdated(remoteVer.data, is_monitor)
 
         if is_monitor:
             run_monitor()
+        elif args.command == "uninstall":
+            run_uninstall()
         elif args.command == "info":
             run_info(remoteVer)
         elif args.command == "update":
             run_update(remoteVer)
         elif args.command == "status":
             run_systemctl("status")
+        elif args.command == "enable":
+            run_systemctl("enable")
+            run_systemctl("start")
+        elif args.command == "disable":
+            run_systemctl("disable")
         elif args.command == "start":
             run_systemctl("start")
         elif args.command == "stop":
             run_systemctl("stop")
         elif args.command == "restart":
             run_systemctl("restart")
+        elif args.command == "settings":
+            settings = load_settings()
+
+            if args.settings_cmd == "set-mode":
+                settings.mode = args.mode
+                save_settings(settings)
+                reload_service_settings()
+                print(f"Mode updated to {args.mode}")
+
+            elif args.settings_cmd == "linear":
+                if args.linear_cmd == "set-curve":
+                    try:
+                        new_curve = parse_curve_input(args.curve)
+                        settings.linear = new_curve
+                        save_settings(settings)
+                        reload_service_settings()
+                        print("Linear curve updated successfully.")
+                    except Exception as e:
+                        print(f"Error: {e}")
+                else:
+                    show_linear_settings(settings)
+            else:
+                show_settings(settings)
         else:
             parser.print_help()
     except KeyboardInterrupt:
