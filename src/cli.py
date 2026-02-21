@@ -6,6 +6,7 @@ import httpx
 from utils import SOCKET_PATH, get_build_identity
 from models import SystemStatus, VersionInfo, VersionStatus
 from vars import APP_RAW_VERSION, APP_NAME, APP_ALIAS
+import shtab
 
 def clear_console():
     sys.stdout.write("\033[H\033[J")
@@ -195,7 +196,17 @@ if __name__ == "__main__":
         
         subparsers.add_parser("monitor", help="show live fan monitor (Default to it if no command is provided)")
 
+        parser.add_argument(
+            "--print-completion",
+            choices=shtab.SUPPORTED_SHELLS,
+            help="print shell completion script",
+        )
+
         args = parser.parse_args()
+
+        if args.print_completion:
+            print(shtab.complete(parser, shell=args.print_completion))
+            sys.exit(0)
 
         is_monitor = args.command == "monitor" or args.command is None
         remoteVer = check_update()

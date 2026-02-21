@@ -45,6 +45,20 @@ pyinstaller \
   --name $NAME \
   "$SRC_DIR/cli.py"
 
+echo "==> Generating Auto Complete"
+
+ln -sf "$NAME" "$DIST_DIR/$ALIAS"
+
+# Zsh
+"$DIST_DIR/$NAME" --print-completion zsh  > "$DIST_DIR/$NAME.zsh"
+"$DIST_DIR/$ALIAS" --print-completion zsh > "$DIST_DIR/$ALIAS.zsh"
+
+# Bash
+"$DIST_DIR/$NAME" --print-completion bash > "$DIST_DIR/$NAME.bash"
+"$DIST_DIR/$ALIAS" --print-completion bash > "$DIST_DIR/$ALIAS.bash"
+
+rm "$DIST_DIR/$ALIAS"
+
 echo "==> Preparing RPM source tree"
 
 sed \
@@ -70,6 +84,8 @@ cp -a "$DIST_DIR" "$SRCROOT/"
 cp -a "$PKG_DIR" "$SRCROOT/"
 cp $ROOT_DIR/README.md "$SRCROOT/"
 cp $ROOT_DIR/LICENSE "$SRCROOT/"
+
+echo "==> Generating Tar"
 
 tar czf "$PKG_DIR/$NAME-$COMPILE_VER.tar.gz" -C "$BUILDROOT" "$NAME-$COMPILE_VER"
 
