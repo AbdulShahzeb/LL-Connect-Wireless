@@ -21,7 +21,8 @@ sleep 1
 echo "==> Cleaning old build artifacts"
 rm -rf "$BUILDROOT"
 rm -rf "$PKG_DIR"
-mkdir "$PKG_DIR"
+mkdir -p "$BUILDROOT"
+mkdir -p "$PKG_DIR"
 mkdir -p "$RES_DIR"
 rm -rf ~/rpmbuild/RPMS/*
 
