@@ -21,7 +21,8 @@ sleep 1
 echo "==> Cleaning old build artifacts"
 rm -rf "$BUILDROOT"
 rm -rf "$PKG_DIR"
-mkdir "$PKG_DIR"
+mkdir -p "$BUILDROOT"
+mkdir -p "$PKG_DIR"
 mkdir -p "$RES_DIR"
 rm -rf ~/rpmbuild/RPMS/*
 
@@ -29,21 +30,31 @@ echo "==> Building PyInstaller binaries"
 
 pyinstaller \
   --onefile \
-  --clean \
   --distpath "$DIST_DIR" \
-  --workpath "$BUILDROOT/pyinstaller-work" \
+  --workpath "$BUILDROOT/service-work" \
   --specpath "$BUILDROOT" \
   --name "${NAME}d" \
-  "$SRC_DIR/service.py"
-
-pyinstaller \
+  "$SRC_DIR/service.py" & pyinstaller \
   --onefile \
-  --clean \
   --distpath "$DIST_DIR" \
-  --workpath "$BUILDROOT/pyinstaller-work" \
+  --workpath "$BUILDROOT/cli-work" \
   --specpath "$BUILDROOT" \
   --name $NAME \
-  "$SRC_DIR/cli.py"
+  "$SRC_DIR/cli.py" & wait
+
+echo "==> Generating Auto Complete"
+
+ln -sf "$NAME" "$DIST_DIR/$ALIAS"
+
+# Zsh
+"$DIST_DIR/$NAME" --print-completion zsh  > "$DIST_DIR/$NAME.zsh"
+"$DIST_DIR/$ALIAS" --print-completion zsh > "$DIST_DIR/$ALIAS.zsh"
+
+# Bash
+"$DIST_DIR/$NAME" --print-completion bash > "$DIST_DIR/$NAME.bash"
+"$DIST_DIR/$ALIAS" --print-completion bash > "$DIST_DIR/$ALIAS.bash"
+
+rm "$DIST_DIR/$ALIAS"
 
 echo "==> Preparing RPM source tree"
 
@@ -70,6 +81,8 @@ cp -a "$DIST_DIR" "$SRCROOT/"
 cp -a "$PKG_DIR" "$SRCROOT/"
 cp $ROOT_DIR/README.md "$SRCROOT/"
 cp $ROOT_DIR/LICENSE "$SRCROOT/"
+
+echo "==> Generating Tar"
 
 tar czf "$PKG_DIR/$NAME-$COMPILE_VER.tar.gz" -C "$BUILDROOT" "$NAME-$COMPILE_VER"
 

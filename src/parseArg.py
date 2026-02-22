@@ -16,7 +16,7 @@ def extractVersion(raw_tag: str, release_note: str | None = None, installer_url:
 
     rel_match = re.search(r'-rel(\d+)', raw_tag)
     if rel_match:
-        release_num = int(rel_match.group(1)) + 1
+        release_num = int(rel_match.group(1))
 
     rc_match = re.search(r'-rc(\d+)', raw_tag)
     if rc_match:
@@ -24,7 +24,7 @@ def extractVersion(raw_tag: str, release_note: str | None = None, installer_url:
         version_attr = f"{version_base}~rc{rc_num}"
     else:
         version_attr = version_base
-    return VersionInfo(semver=version_base, rc=rc_num, release=release_num, compile_ver=version_attr, raw_tag=raw_tag, release_note=release_note, installer_url=installer_url)
+    return VersionInfo(semver=version_base, rc=rc_num, release=release_num, compile_ver=version_attr, raw_tag=raw_tag, release_note=release_note, installer_url=installer_url, last_notified=None)
 
 def main():
     parser = argparse.ArgumentParser()
