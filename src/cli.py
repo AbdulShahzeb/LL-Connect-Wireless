@@ -95,7 +95,7 @@ def run_info(remote_ver: Optional[VersionStatus]):
             release_note = getattr(v, "release_note", "")
         else: 
             print(f"\033[1mREMOTE_VERSION:\033[0m  Unknown")
-            release_note = "You can run 'llcw update' to update to latest version from GitHub."
+            release_note = f"You can run '{APP_ALIAS} update' to update to latest version from GitHub."
         print("-" * 30)
         print("\033[1mCHANGE_LOG:\033[0m")
         print(release_note)
@@ -176,7 +176,7 @@ def printOutdated(newVer: VersionInfo, wait = False):
         display += f" (RC{newVer.rc})"
     print(f"\n\033[93m[!] UPDATE AVAILABLE: Version {display} is out!\033[0m")
     print(f"Current version: {APP_RAW_VERSION}")
-    print(f"Run 'llcw update' to update")
+    print(f"Run '{APP_ALIAS} update' to update")
     print(f"Or you can download from: https://github.com/Yoinky3000/LL-Connect-Wireless/releases/tag/{newVer.raw_tag}\n")
     if wait: 
         time.sleep(5)
@@ -204,22 +204,22 @@ def show_linear_settings(settings: Settings):
     print("-" * 30)
 
 def run_uninstall():
-    dist_tag, arch, ext = get_build_identity()
+    confirm = input("Confirm? (y/N): ").lower()
+    if confirm != "y":
+        print("Uninstall cancelled.")
+        return
 
+    dist_tag, arch, ext = get_build_identity()
+    print("Removing configuration...")
+    shutil.rmtree(CONFIG_DIR, ignore_errors=True)
+    shutil.rmtree(CACHE_DIR, ignore_errors=True)
+    print(f"Uninstalling {APP_ALIAS}...")
+    if ext == ".rpm":
+        subprocess.run(["sudo", "dnf", "remove", "-y", APP_NAME], check=True)
     print("Stopping service...")
     run_systemctl("stop")
     run_systemctl("disable")
-
-    confirm = input("Remove configuration and cache files? (y/N): ").lower()
-    if confirm == "y":
-        shutil.rmtree(CONFIG_DIR, ignore_errors=True)
-        shutil.rmtree(CACHE_DIR, ignore_errors=True)
-        print("Configuration removed.")
-
-    confirm = input("Remove the package using dnf? (y/N): ").lower()
-    if confirm == "y":
-        if ext == ".rpm":
-            subprocess.run(["sudo", "dnf", "remove", "-y", APP_NAME], check=True)
+    print("Uninstall completed")
 
 if __name__ == "__main__":
     try:
@@ -232,25 +232,25 @@ if __name__ == "__main__":
 
         subparsers.add_parser("help", help="same as -h/--help")
 
-        subparsers.add_parser("info", help="show app version info and changelog of llcw")
+        subparsers.add_parser("info", help=f"show app version info and changelog of {APP_ALIAS}")
 
-        subparsers.add_parser("update", help="check and update llcw to latest version")
+        subparsers.add_parser("update", help=f"check and update {APP_ALIAS} to latest version")
 
-        subparsers.add_parser("status", help="show systemd service status")
+        subparsers.add_parser("status", help=f"show systemd service status")
 
-        subparsers.add_parser("enable", help="enable llcw service and start it")
+        subparsers.add_parser("enable", help=f"enable {APP_ALIAS} service and start it")
 
-        subparsers.add_parser("disable", help="disable llcw service")
+        subparsers.add_parser("disable", help=f"disable {APP_ALIAS} service")
 
-        subparsers.add_parser("start", help="start the llcw service")
+        subparsers.add_parser("start", help=f"start the {APP_ALIAS} service")
 
-        subparsers.add_parser("stop", help="stop the llcw service")
+        subparsers.add_parser("stop", help=f"stop the {APP_ALIAS} service")
 
-        subparsers.add_parser("restart", help="restart the llcw service")
+        subparsers.add_parser("restart", help=f"restart the {APP_ALIAS} service")
         
         subparsers.add_parser("monitor", help="show live fan monitor (Default to it if no command is provided)")
 
-        subparsers.add_parser("uninstall", help="stop, disable and remove llcw")
+        subparsers.add_parser("uninstall", help=f"stop, disable and remove {APP_ALIAS}")
 
         settings_parser = subparsers.add_parser("settings", help="Manage settings")
         settings_sub = settings_parser.add_subparsers(dest="settings_cmd")
