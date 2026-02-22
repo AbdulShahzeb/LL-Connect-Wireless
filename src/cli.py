@@ -210,15 +210,15 @@ def run_uninstall():
         return
 
     dist_tag, arch, ext = get_build_identity()
+    print("Stopping service...")
+    run_systemctl("stop")
+    run_systemctl("disable")
     print("Removing configuration...")
     shutil.rmtree(CONFIG_DIR, ignore_errors=True)
     shutil.rmtree(CACHE_DIR, ignore_errors=True)
     print(f"Uninstalling {APP_ALIAS}...")
     if ext == ".rpm":
         subprocess.run(["sudo", "dnf", "remove", "-y", APP_NAME], check=True)
-    print("Stopping service...")
-    run_systemctl("stop")
-    run_systemctl("disable")
     print("Uninstall completed")
 
 def generate_parser():
