@@ -123,7 +123,7 @@ def run_update(remote_ver: Optional[VersionStatus]):
         print("\033[91mNo compatible installer found for your specific system architecture/distro.\033[0m")
         return
 
-    tmp_path = f"/tmp/llcw_update{ext}"
+    tmp_path = f"/tmp/{APP_ALIAS}_update{ext}"
 
     print(f"\n\033[1mUpdate Found: {remote_ver.data.raw_tag}\033[0m")
     print(f"Download URL: {url}")
