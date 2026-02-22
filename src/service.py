@@ -2,6 +2,7 @@ import os
 import time
 import threading
 import sys
+import subprocess
 import usb.core
 import usb.util
 import psutil
@@ -9,19 +10,18 @@ import uvicorn
 from fastapi import FastAPI
 from parseArg import extractVersion
 from utils import DEV_MODE, SOCKET_DIR, SOCKET_PATH, load_settings
-from models import Fan, LinearMode, SystemStatus
-from typing import List, Literal
+from models import CurveMode, Fan, FanMode, LinearMode, SystemStatus
+from typing import List, Literal, Optional
 from vars import APP_NAME, APP_RAW_VERSION
 
 shared_state: SystemStatus = None
 
-def update_state(temp: int, fans: List[Fan]):
+
+def update_state(cpu_temp: Optional[float], gpu_temp: Optional[float], fans: List[Fan]):
     global shared_state
     shared_state = SystemStatus(
-            timestamp=time.time(),
-            cpu_temp=temp,
-            fans=fans
-        )
+        timestamp=time.time(), cpu_temp=cpu_temp, gpu_temp=gpu_temp, fans=fans
+    )
 
 
 # ==============================
@@ -29,9 +29,12 @@ def update_state(temp: int, fans: List[Fan]):
 # ==============================
 
 app = FastAPI()
+
+
 @app.get("/status", response_model=SystemStatus)
 async def get_status():
     return shared_state
+
 
 @app.post("/reload-settings")
 async def reload_settings():
@@ -39,9 +42,11 @@ async def reload_settings():
     SETTINGS = load_settings()
     return {"msg": "ok"}
 
+
 @app.get("/")
 async def root():
     return {"status": "running", "service": APP_NAME}
+
 
 def start_api_server():
     uvicorn.run(app, uds=SOCKET_PATH, log_level="warning")
@@ -55,7 +60,7 @@ TX = 0x8040
 RX = 0x8041
 
 USB_OUT = 0x01
-USB_IN  = 0x81
+USB_IN = 0x81
 
 GET_DEV_CMD = 0x10
 RF_PAGE_STRIDE = 434
@@ -71,14 +76,8 @@ MAX_DEVICES_PAGE = 10
 # MAX_TEMP = 85.0
 SETTINGS = load_settings()
 
-DAMPING_SECOND = 2.0
-DAMPING_TEMP   = 1.0
+LOOP_INTERVAL = 0.2
 
-PWM_STEP = 4
-PWM_STEP_INTERVAL = 0.5
-
-
-LOOP_INTERVAL  = 1
 
 # ==============================
 # UTILS
@@ -86,15 +85,19 @@ LOOP_INTERVAL  = 1
 def u8(x):
     return bytes([x & 0xFF])
 
+
 def mac_to_bytes(mac):
     return bytes(int(b, 16) for b in mac.split(":"))
+
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
+
 def clear_console():
     sys.stdout.write("\033[H\033[J")
     sys.stdout.flush()
+
 
 def displayDetected(fans: List[Fan]):
     print("Detected devices:\n")
@@ -125,6 +128,7 @@ def open_device(pid: Literal[32832]):
     usb.util.claim_interface(dev, 0)
     return dev
 
+
 def fetch_page(rx: usb.core.Device, page_count: int):
     cmd = bytearray(64)
     cmd[0] = GET_DEV_CMD
@@ -148,45 +152,47 @@ def fetch_page(rx: usb.core.Device, page_count: int):
 
     return buf
 
-def list_fans(rx: usb.core.Device, target_pwm: int):
+
+def list_fans(rx: usb.core.Device, target_pwm: int = 0):
     payload = fetch_page(rx, 1)
-    if not payload or payload is None or payload == b'':
+    if not payload or payload is None or payload == b"":
         return []
     count = payload[1]
     fans: List[Fan] = []
     offset = 4
 
     for _ in range(count):
-        record = payload[offset:offset+42]
+        record = payload[offset : offset + 42]
         offset += 42
 
         if record[41] != 28:
             continue
-            
+
         mac = ":".join(f"{b:02x}" for b in record[0:6])
         fans.append(
             Fan(
                 mac=mac,
-                master_mac= ":".join(f"{b:02x}" for b in record[6:12]),
-                channel= record[12],
-                rx_type= record[13],
-                fan_count= record[19] % 10,
-                pwm= list(record[36:40])[0],
-                rpm= [
+                master_mac=":".join(f"{b:02x}" for b in record[6:12]),
+                channel=record[12],
+                rx_type=record[13],
+                fan_count=record[19] % 10,
+                pwm=list(record[36:40])[0],
+                rpm=[
                     (record[28] << 8) | record[29],
                     (record[30] << 8) | record[31],
                     (record[32] << 8) | record[33],
                     (record[34] << 8) | record[35],
                 ],
-                target_pwm= target_pwm,
-                is_bound= record[6:12] != b"\x00"*6
+                target_pwm=target_pwm,
+                is_bound=record[6:12] != b"\x00" * 6,
             )
         )
 
     return fans
 
+
 # ==============================
-# CPU TEMP
+# CPU/GPU TEMP
 # ==============================
 def get_cpu_temp():
     temps = psutil.sensors_temperatures()
@@ -196,10 +202,43 @@ def get_cpu_temp():
     for _, entries in temps.items():
         for e in entries:
             if e.current is not None:
-                if e.label == "Tctl": tctl = e.current
+                if e.label == "Tctl":
+                    tctl = e.current
                 values.append(e.current)
 
     return tctl if tctl else (max(values) if values else None)
+
+
+def get_gpu_temp():
+    try:
+        output = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=1.0,
+        )
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
+        return None
+
+    values: List[float] = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            values.append(float(line))
+        except ValueError:
+            continue
+    return max(values) if values else None
+
 
 # ==============================
 # TEMP → PWM
@@ -219,12 +258,25 @@ def temp_to_pwm(temp: float, linear: LinearMode):
 
     return int(round(pwm_percent / 100 * 255))
 
-def approach_pwm(current, target, step):
-    if current < target:
-        return min(current + step, target)
-    elif current > target:
-        return max(current - step, target)
-    return current
+
+def curve_to_pwm(temp: float, curve: CurveMode):
+    points = curve.points
+
+    if temp <= points[0].temp_c:
+        return int(round(points[0].percent / 100 * 255))
+    if temp >= points[-1].temp_c:
+        return int(round(points[-1].percent / 100 * 255))
+
+    for i in range(1, len(points)):
+        left = points[i - 1]
+        right = points[i]
+        if temp <= right.temp_c:
+            ratio = (temp - left.temp_c) / (right.temp_c - left.temp_c)
+            pwm_percent = left.percent + ratio * (right.percent - left.percent)
+            pwm_percent = clamp(pwm_percent, 0, 100)
+            return int(round(pwm_percent / 100 * 255))
+
+    return int(round(points[-1].percent / 100 * 255))
 
 
 # ==============================
@@ -253,79 +305,103 @@ def build_data(fan: Fan, seq):
         frame += bytes(4)
     return frame
 
+
 # ==============================
 # MAIN LOOP
 # ==============================
 def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
     global SETTINGS
-    last_temp = None
-    last_target_update = 0
-
-    last_pwm_step_time = {}
-    last_fans_amount = 0;
+    last_fans_amount = 0
+    warned_missing_gpu_temp = False
 
     err = 0
     while True:
         try:
-            now = time.time()
-            temp = get_cpu_temp()
-            if temp is None:
+            cpu_temp = get_cpu_temp()
+            gpu_mac_set = set(SETTINGS.gpu_temp_macs)
+            should_read_gpu_temp = len(gpu_mac_set) > 0
+            gpu_temp = get_gpu_temp() if should_read_gpu_temp else None
+
+            cpu_target_pwm: Optional[int] = None
+            gpu_target_pwm: Optional[int] = None
+
+            if SETTINGS.mode == FanMode.linear:
+                if cpu_temp is not None:
+                    cpu_target_pwm = temp_to_pwm(cpu_temp, SETTINGS.linear)
+
+                if should_read_gpu_temp and gpu_temp is not None:
+                    gpu_target_pwm = temp_to_pwm(gpu_temp, SETTINGS.gpu_linear)
+                    warned_missing_gpu_temp = False
+                elif should_read_gpu_temp and cpu_temp is not None:
+                    gpu_target_pwm = temp_to_pwm(cpu_temp, SETTINGS.gpu_linear)
+                    if DEV_MODE and not warned_missing_gpu_temp:
+                        print(
+                            "GPU temp unavailable; GPU-routed fan groups are temporarily using CPU temperature with GPU linear mapping."
+                        )
+                        warned_missing_gpu_temp = True
+                else:
+                    warned_missing_gpu_temp = False
+            else:
+                if cpu_temp is not None:
+                    cpu_target_pwm = curve_to_pwm(cpu_temp, SETTINGS.cpu_curve)
+
+                if should_read_gpu_temp and gpu_temp is not None:
+                    gpu_target_pwm = curve_to_pwm(gpu_temp, SETTINGS.gpu_curve)
+                    warned_missing_gpu_temp = False
+                elif should_read_gpu_temp and cpu_temp is not None:
+                    gpu_target_pwm = curve_to_pwm(cpu_temp, SETTINGS.cpu_curve)
+                    if DEV_MODE and not warned_missing_gpu_temp:
+                        print(
+                            "GPU temp unavailable; GPU-routed fan groups are temporarily using the CPU curve."
+                        )
+                        warned_missing_gpu_temp = True
+                else:
+                    warned_missing_gpu_temp = False
+
+            if cpu_target_pwm is None and gpu_target_pwm is None:
                 time.sleep(1)
                 continue
 
-            target_pwm = temp_to_pwm(temp, SETTINGS.linear)
+            fans = list_fans(rx, 0)
 
-            if (
-                last_temp is None or
-                (
-                    abs(temp - last_temp) >= DAMPING_TEMP and
-                    now - last_target_update >= DAMPING_SECOND
-                )
-            ):
-                last_temp = temp
-                last_target_update = now
-            else:
-                target_pwm = temp_to_pwm(last_temp, SETTINGS.linear)
-
-            fans = list_fans(rx, target_pwm)
-
-            if (last_fans_amount != 0 and len(fans) == 0): continue
+            if last_fans_amount != 0 and len(fans) == 0:
+                continue
             last_fans_amount = len(fans)
 
             for f in fans:
-                mac = f.mac
+                mac = f.mac.lower()
+                wants_gpu_temp = mac in gpu_mac_set
+                if wants_gpu_temp and gpu_target_pwm is not None:
+                    target_pwm = gpu_target_pwm
+                elif cpu_target_pwm is not None:
+                    target_pwm = cpu_target_pwm
+                else:
+                    target_pwm = f.pwm
 
-                if mac not in last_pwm_step_time:
-                    last_pwm_step_time[mac] = 0
-
-                if now - last_pwm_step_time[mac] >= PWM_STEP_INTERVAL:
-                    f.pwm = approach_pwm(
-                        f.pwm,
-                        target_pwm,
-                        PWM_STEP
-                    )
-                    last_pwm_step_time[mac] = now
+                f.target_pwm = target_pwm
+                f.pwm = f.target_pwm
 
             for f in fans:
-                mac = f.mac
-
                 for i in range(len(fans)):
                     tx.write(USB_OUT, build_data(f, i))
-                    update_state(temp, fans)
                 time.sleep(0.1)
+
+            update_state(cpu_temp, gpu_temp, fans)
 
             if DEV_MODE:
                 clear_console()
                 displayDetected(fans)
-                print(f"\n\nCPU Temp: {temp:.1f} °C\n")
+                cpu_text = f"{cpu_temp:.1f} °C" if cpu_temp is not None else "N/A"
+                gpu_text = f"{gpu_temp:.1f} °C" if gpu_temp is not None else "N/A"
+                print(f"\n\nCPU Temp: {cpu_text}")
+                print(f"GPU Temp: {gpu_text}\n")
                 print(f"{'Fan Address':17} | Fans | Cur % | Tgt % | RPM")
                 print("-" * 72)
-
 
             for d in fans:
                 mac = d.mac
 
-                tgt_pwm = target_pwm
+                tgt_pwm = d.target_pwm
 
                 cur_pct = int(d.pwm / 255 * 100)
                 tgt_pct = int(tgt_pwm / 255 * 100)
@@ -349,7 +425,6 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
             time.sleep(LOOP_INTERVAL)
 
 
-
 # ==============================
 # ENTRY
 # ==============================
@@ -370,7 +445,7 @@ if __name__ == "__main__":
         while not os.path.exists(SOCKET_PATH) and retries < 50:
             time.sleep(0.2)
             retries += 1
-        
+
         if os.path.exists(SOCKET_PATH):
             try:
                 os.chmod(SOCKET_PATH, 0o666)
@@ -384,7 +459,7 @@ if __name__ == "__main__":
         displayDetected(fans)
 
         time.sleep(5 if DEV_MODE else 0)
-        
+
         fan_control_loop(rx, tx)
 
     except KeyboardInterrupt:
@@ -392,9 +467,11 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}")
     finally:
-        if tx: usb.util.dispose_resources(tx)
-        if rx: usb.util.dispose_resources(rx)
-        
+        if tx:
+            usb.util.dispose_resources(tx)
+        if rx:
+            usb.util.dispose_resources(rx)
+
         if os.path.exists(SOCKET_PATH):
             os.unlink(SOCKET_PATH)
         sys.exit(0)

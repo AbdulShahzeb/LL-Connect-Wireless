@@ -6,14 +6,37 @@ import argparse
 import subprocess
 from typing import Optional
 import httpx
-from utils import CACHE_DIR, CONFIG_DIR, SOCKET_PATH, check_latest_version, get_build_identity, load_settings, parse_curve_input, save_settings
-from models import FanMode, LinearMode, Settings, SystemStatus, VersionInfo, VersionStatus
+from utils import (
+    CACHE_DIR,
+    CONFIG_DIR,
+    SOCKET_PATH,
+    check_latest_version,
+    format_four_point_curve,
+    get_build_identity,
+    load_settings,
+    parse_curve_input,
+    parse_four_point_curve_input,
+    save_settings,
+)
+from models import (
+    FanMode,
+    LinearMode,
+    Settings,
+    SystemStatus,
+    VersionInfo,
+    VersionStatus,
+    default_cpu_curve,
+    default_gpu_linear,
+    default_gpu_curve,
+)
 from vars import APP_RAW_VERSION, APP_NAME, APP_ALIAS
 import shtab
+
 
 def clear_console():
     sys.stdout.write("\033[H\033[J")
     sys.stdout.flush()
+
 
 def fetch_state() -> SystemStatus:
     transport = httpx.HTTPTransport(uds=SOCKET_PATH)
@@ -21,17 +44,22 @@ def fetch_state() -> SystemStatus:
         resp = client.get("http://localhost/status")
         resp.raise_for_status()
         return SystemStatus(**resp.json())
-    
+
+
 def reload_service_settings():
     transport = httpx.HTTPTransport(uds=SOCKET_PATH)
     with httpx.Client(transport=transport) as client:
         client.post("http://localhost/reload-settings")
 
+
 def render(status: SystemStatus):
     clear_console()
     print(f"LL-Connect-Wireless Monitor\n\n")
 
-    print(f"CPU Temp: {status.cpu_temp:.1f} °C\n")
+    cpu_text = f"{status.cpu_temp:.1f} °C" if status.cpu_temp is not None else "N/A"
+    gpu_text = f"{status.gpu_temp:.1f} °C" if status.gpu_temp is not None else "N/A"
+    print(f"CPU Temp: {cpu_text}")
+    print(f"GPU Temp: {gpu_text}\n")
     print(f"{'Fan Address':17} | Fans | Cur % | Tgt % | RPM")
     print("-" * 72)
 
@@ -47,6 +75,7 @@ def render(status: SystemStatus):
             f"{tgt_pct:>5}% | "
             f"{rpm}"
         )
+
 
 def run_monitor():
     err = 0
@@ -64,9 +93,10 @@ def run_monitor():
                 sys.exit(1)
         time.sleep(1)
 
-def run_systemctl(action: str, service = True):
+
+def run_systemctl(action: str, service=True):
     service_name = f"{APP_NAME}.service"
-    
+
     try:
         command = ["systemctl", "--user", action]
         display = f"systemctl --user {action}"
@@ -80,20 +110,23 @@ def run_systemctl(action: str, service = True):
         print(f"Error executing command: {e}")
         sys.exit(e.returncode)
     except FileNotFoundError:
-        print("Error: 'systemctl' command not found. Are you sure you are using in Linux?")
+        print(
+            "Error: 'systemctl' command not found. Are you sure you are using in Linux?"
+        )
         sys.exit(1)
+
 
 def run_info(remote_ver: Optional[VersionStatus]):
     try:
         print("\033[1mLL-Connect-Wireless Information\033[0m")
         print("-" * 30)
         print(f"\033[1mCURRENT_VERSION:\033[0m {APP_RAW_VERSION}")
-        
+
         if remote_ver:
             v = remote_ver.data
             print(f"\033[1mREMOTE_VERSION:\033[0m  {v.raw_tag}")
             release_note = getattr(v, "release_note", "")
-        else: 
+        else:
             print(f"\033[1mREMOTE_VERSION:\033[0m  Unknown")
             release_note = f"You can run '{APP_ALIAS} update' to update to latest version from GitHub."
         print("-" * 30)
@@ -103,6 +136,7 @@ def run_info(remote_ver: Optional[VersionStatus]):
     except Exception as e:
         print(f"Could not connect to daemon: {e}")
 
+
 def run_update(remote_ver: Optional[VersionStatus]):
     if not remote_ver:
         print("Could not retrieve version information from the daemon.")
@@ -111,16 +145,18 @@ def run_update(remote_ver: Optional[VersionStatus]):
     if not remote_ver.outdated:
         print("You are already up to date.")
         return
-    
+
     dist_tag, arch, ext = get_build_identity()
     print(f"\033[1mYour System Info\033[0m -")
     print(f"  Distribution Tag > {dist_tag}")
     print(f"  Architecture > {arch}")
     print(f"  Installer Extension > {ext}\n")
-    
+
     url = remote_ver.data.installer_url
     if not url:
-        print("\033[91mNo compatible installer found for your specific system architecture/distro.\033[0m")
+        print(
+            "\033[91mNo compatible installer found for your specific system architecture/distro.\033[0m"
+        )
         return
 
     tmp_path = f"/tmp/{APP_ALIAS}_update{ext}"
@@ -130,8 +166,10 @@ def run_update(remote_ver: Optional[VersionStatus]):
     print(f"Target Path:  {tmp_path}")
     print("-" * 40)
 
-    confirm = input("Do you want to proceed with the download and installation? (y/N): ").lower()
-    if confirm != 'y':
+    confirm = input(
+        "Do you want to proceed with the download and installation? (y/N): "
+    ).lower()
+    if confirm != "y":
         print("Update cancelled.")
         return
 
@@ -143,7 +181,7 @@ def run_update(remote_ver: Optional[VersionStatus]):
                 with open(tmp_path, "wb") as f:
                     for chunk in response.iter_bytes():
                         f.write(chunk)
-        
+
         print("Download complete. Starting installation...")
         if ext == ".rpm":
             subprocess.run(["sudo", "dnf", "install", "-y", tmp_path], check=True)
@@ -170,38 +208,65 @@ def run_update(remote_ver: Optional[VersionStatus]):
     except Exception as e:
         print(f"\033[91mAn unexpected error occurred: {e}\033[0m")
 
-def printOutdated(newVer: VersionInfo, wait = False):
+
+def printOutdated(newVer: VersionInfo, wait=False):
     display = newVer.semver
     if newVer.rc:
         display += f" (RC{newVer.rc})"
     print(f"\n\033[93m[!] UPDATE AVAILABLE: Version {display} is out!\033[0m")
     print(f"Current version: {APP_RAW_VERSION}")
     print(f"Run '{APP_ALIAS} update' to update")
-    print(f"Or you can download from: https://github.com/Yoinky3000/LL-Connect-Wireless/releases/tag/{newVer.raw_tag}\n")
-    if wait: 
+    print(
+        f"Or you can download from: https://github.com/Yoinky3000/LL-Connect-Wireless/releases/tag/{newVer.raw_tag}\n"
+    )
+    if wait:
         time.sleep(5)
+
 
 def show_settings(settings: Settings):
     print("\033[1mCurrent Settings\033[0m")
     print("-" * 30)
-    print(f"Mode: {settings.mode}")
+    print(f"Mode: {settings.mode.value}")
     print()
     print("Linear Mode:")
-    print(f"  Min Temp : {settings.linear.min_temp} °C")
-    print(f"  Max Temp : {settings.linear.max_temp} °C")
-    print(f"  Min PWM  : {settings.linear.min_pwm}%")
-    print(f"  Max PWM  : {settings.linear.max_pwm}%")
+    print(
+        f"  CPU_LINEAR : {settings.linear.min_temp}:{settings.linear.min_pwm},{settings.linear.max_temp}:{settings.linear.max_pwm}"
+    )
+    print(
+        f"  GPU_LINEAR : {settings.gpu_linear.min_temp}:{settings.gpu_linear.min_pwm},{settings.gpu_linear.max_temp}:{settings.gpu_linear.max_pwm}"
+    )
+    print()
+    print("Curve Mode:")
+    print(f"  CPU_FAN_CURVE : {format_four_point_curve(settings.cpu_curve)}")
+    print(f"  GPU_FAN_CURVE : {format_four_point_curve(settings.gpu_curve)}")
+    print(
+        f"  GPU_TEMP_MACS : {', '.join(settings.gpu_temp_macs) if settings.gpu_temp_macs else '(none)'}"
+    )
     print("-" * 30)
 
 
 def show_linear_settings(settings: Settings):
     print("\033[1mLinear Mode Settings\033[0m")
     print("-" * 30)
-    print(f"Min Temp : {settings.linear.min_temp} °C")
-    print(f"Max Temp : {settings.linear.max_temp} °C")
-    print(f"Min PWM  : {settings.linear.min_pwm}%")
-    print(f"Max PWM  : {settings.linear.max_pwm}%")
+    print(
+        f"CPU_LINEAR : {settings.linear.min_temp}:{settings.linear.min_pwm},{settings.linear.max_temp}:{settings.linear.max_pwm}"
+    )
+    print(
+        f"GPU_LINEAR : {settings.gpu_linear.min_temp}:{settings.gpu_linear.min_pwm},{settings.gpu_linear.max_temp}:{settings.gpu_linear.max_pwm}"
+    )
     print("-" * 30)
+
+
+def show_curve_settings(settings: Settings):
+    print("\033[1mCurve Mode Settings\033[0m")
+    print("-" * 30)
+    print(f"CPU_FAN_CURVE : {format_four_point_curve(settings.cpu_curve)}")
+    print(f"GPU_FAN_CURVE : {format_four_point_curve(settings.gpu_curve)}")
+    print(
+        f"GPU_TEMP_MACS : {', '.join(settings.gpu_temp_macs) if settings.gpu_temp_macs else '(none)'}"
+    )
+    print("-" * 30)
+
 
 def run_uninstall():
     confirm = input("Confirm? (y/N): ").lower()
@@ -221,19 +286,24 @@ def run_uninstall():
         subprocess.run(["sudo", "dnf", "remove", "-y", APP_NAME], check=True)
     print("Uninstall completed")
 
+
 def generate_parser():
     parser = argparse.ArgumentParser(
         description=f"LL-Connect-Wireless (LLCW) CLI (Version: {APP_RAW_VERSION})",
-        epilog=f"'{APP_ALIAS}' is also an alias command to '{APP_NAME}'.\n\nYou can also use '{APP_NAME}' without arguments to see live monitor."
+        epilog=f"'{APP_ALIAS}' is also an alias command to '{APP_NAME}'.\n\nYou can also use '{APP_NAME}' without arguments to see live monitor.",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     subparsers.add_parser("help", help="same as -h/--help")
 
-    subparsers.add_parser("info", help=f"show app version info and changelog of {APP_ALIAS}")
+    subparsers.add_parser(
+        "info", help=f"show app version info and changelog of {APP_ALIAS}"
+    )
 
-    subparsers.add_parser("update", help=f"check and update {APP_ALIAS} to latest version")
+    subparsers.add_parser(
+        "update", help=f"check and update {APP_ALIAS} to latest version"
+    )
 
     subparsers.add_parser("status", help=f"show systemd service status")
 
@@ -247,28 +317,55 @@ def generate_parser():
 
     subparsers.add_parser("restart", help=f"restart the {APP_ALIAS} service")
 
-    subparsers.add_parser("monitor", help="show live fan monitor (Default to it if no command is provided)")
+    subparsers.add_parser(
+        "monitor",
+        help="show live fan monitor (Default to it if no command is provided)",
+    )
 
     subparsers.add_parser("uninstall", help=f"stop, disable and remove {APP_ALIAS}")
 
     settings_parser = subparsers.add_parser("settings", help="Manage settings")
     settings_sub = settings_parser.add_subparsers(dest="settings_cmd")
-    settings_sub.add_parser(
-        "set-mode",
-        help="set control mode"
-    ).add_argument(
-        "mode",
-        choices=[m.value for m in FanMode],
-        help="control mode"
+    settings_sub.add_parser("set-mode", help="set control mode").add_argument(
+        "mode", choices=[m.value for m in FanMode], help="control mode"
     )
     settings_sub.add_parser("reset", help="reset the settings")
-        
+
     linear_parser = settings_sub.add_parser("linear", help="Linear mode settings")
     linear_sub = linear_parser.add_subparsers(dest="linear_cmd")
 
     linear_sub.add_parser("reset", help="reset linear curve")
+    linear_sub.add_parser("reset-gpu-curve", help="reset GPU linear curve")
     linear_set = linear_sub.add_parser("set-curve", help="set linear curve")
-    linear_set.add_argument("curve", help="format: 'minT:minP,maxT:maxP', or just give a single pwm percentage for fixed pwm")
+    linear_set.add_argument(
+        "curve",
+        help="format: 'minT:minP,maxT:maxP', or just give a single pwm percentage for fixed pwm",
+    )
+    linear_gpu_set = linear_sub.add_parser("set-gpu-curve", help="set GPU linear curve")
+    linear_gpu_set.add_argument(
+        "curve",
+        help="format: 'minT:minP,maxT:maxP', or just give a single pwm percentage for fixed pwm",
+    )
+
+    curve_parser = settings_sub.add_parser("curve", help="Curve mode settings")
+    curve_sub = curve_parser.add_subparsers(dest="curve_cmd")
+
+    curve_sub.add_parser("reset", help="reset CPU/GPU curves and GPU MAC routing")
+    cpu_curve_set = curve_sub.add_parser("set-cpu-curve", help="set CPU curve")
+    cpu_curve_set.add_argument(
+        "curve", help="format: 'temp:percent,temp:percent,temp:percent,temp:percent'"
+    )
+    gpu_curve_set = curve_sub.add_parser("set-gpu-curve", help="set GPU curve")
+    gpu_curve_set.add_argument(
+        "curve", help="format: 'temp:percent,temp:percent,temp:percent,temp:percent'"
+    )
+    gpu_macs_set = curve_sub.add_parser(
+        "set-gpu-macs", help="set GPU-routed MAC addresses"
+    )
+    gpu_macs_set.add_argument(
+        "macs", help="format: 'aa:bb:cc:dd:ee:ff,11:22:33:44:55:66'"
+    )
+    curve_sub.add_parser("clear-gpu-macs", help="clear GPU-routed MAC addresses")
 
     parser.add_argument(
         "--print-completion",
@@ -276,6 +373,7 @@ def generate_parser():
         help="print shell completion script",
     )
     return parser
+
 
 if __name__ == "__main__":
     try:
@@ -289,7 +387,13 @@ if __name__ == "__main__":
 
         is_monitor = args.command == "monitor" or args.command is None
         remoteVer = check_latest_version()
-        if (remoteVer and remoteVer.outdated and not remoteVer.notified and not args.command == "info" and not args.command == "update"):
+        if (
+            remoteVer
+            and remoteVer.outdated
+            and not remoteVer.notified
+            and not args.command == "info"
+            and not args.command == "update"
+        ):
             printOutdated(remoteVer.data, is_monitor)
 
         if is_monitor:
@@ -331,16 +435,71 @@ if __name__ == "__main__":
                         settings.linear = new_curve
                         save_settings(settings)
                         reload_service_settings()
-                        print("Linear curve updated successfully.")
+                        print("CPU linear curve updated successfully.")
+                    except Exception as e:
+                        print(f"Error: {e}")
+                elif args.linear_cmd == "set-gpu-curve":
+                    try:
+                        new_curve = parse_curve_input(args.curve)
+                        settings.gpu_linear = new_curve
+                        save_settings(settings)
+                        reload_service_settings()
+                        print("GPU linear curve updated successfully.")
                     except Exception as e:
                         print(f"Error: {e}")
                 elif args.linear_cmd == "reset":
                     settings.linear = LinearMode()
                     save_settings(settings)
                     reload_service_settings()
-                    print(f"Finished reset linear curve")
+                    print("Finished reset CPU linear curve")
+                elif args.linear_cmd == "reset-gpu-curve":
+                    settings.gpu_linear = default_gpu_linear()
+                    save_settings(settings)
+                    reload_service_settings()
+                    print("Finished reset GPU linear curve")
                 else:
                     show_linear_settings(settings)
+            elif args.settings_cmd == "curve":
+                if args.curve_cmd == "set-cpu-curve":
+                    try:
+                        settings.cpu_curve = parse_four_point_curve_input(args.curve)
+                        save_settings(settings)
+                        reload_service_settings()
+                        print("CPU curve updated successfully.")
+                    except Exception as e:
+                        print(f"Error: {e}")
+                elif args.curve_cmd == "set-gpu-curve":
+                    try:
+                        settings.gpu_curve = parse_four_point_curve_input(args.curve)
+                        save_settings(settings)
+                        reload_service_settings()
+                        print("GPU curve updated successfully.")
+                    except Exception as e:
+                        print(f"Error: {e}")
+                elif args.curve_cmd == "set-gpu-macs":
+                    try:
+                        settings.gpu_temp_macs = [
+                            m.strip() for m in args.macs.split(",") if m.strip()
+                        ]
+                        save_settings(settings)
+                        reload_service_settings()
+                        print("GPU MAC routing list updated successfully.")
+                    except Exception as e:
+                        print(f"Error: {e}")
+                elif args.curve_cmd == "clear-gpu-macs":
+                    settings.gpu_temp_macs = []
+                    save_settings(settings)
+                    reload_service_settings()
+                    print("Cleared GPU MAC routing list.")
+                elif args.curve_cmd == "reset":
+                    settings.cpu_curve = default_cpu_curve()
+                    settings.gpu_curve = default_gpu_curve()
+                    settings.gpu_temp_macs = []
+                    save_settings(settings)
+                    reload_service_settings()
+                    print("Finished reset curve mode settings")
+                else:
+                    show_curve_settings(settings)
             else:
                 show_settings(settings)
         else:

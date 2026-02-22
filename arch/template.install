@@ -1,0 +1,21 @@
+post_install() {
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules || true
+        udevadm trigger || true
+    fi
+    echo "Enable/start per-user service with: systemctl --user enable --now @NAME@.service"
+}
+
+post_upgrade() {
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules || true
+        udevadm trigger || true
+    fi
+}
+
+post_remove() {
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules || true
+        udevadm trigger || true
+    fi
+}
