@@ -34,7 +34,7 @@ my pc is built with Lian Li SL120 V3, which is controlled wirelessly with the us
 * Wireless fan detection and monitoring
 * Temperature-based PWM control (CPU + optional GPU source routing)
 * 4-point curve mode with linear interpolation between points
-* Smooth fan speed ramping (damping)
+* Immediate fan response to temperature changes
 * Runs as a systemd service
 * CLI for real-time status display
 
@@ -67,9 +67,80 @@ sudo dnf install *.rpm
 * run `start` command to start the service
 * you can also use `enable` command to enable the service so that it will keep running if your computer restarted
 
+### Build and package for Debian/Ubuntu
+
+Install build dependencies:
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip dpkg-dev build-essential
+```
+
+Build:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+./deb/compile.sh
+```
+
+Install:
+
+```bash
+sudo apt install ./deb/.result/ll-connect-wireless_*.deb
+```
+
+Enable and run user service:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now ll-connect-wireless.service
+```
+
+### Build and package for Arch Linux
+
+Install build dependencies:
+
+```bash
+sudo pacman -S --needed base-devel python python-pip
+```
+
+Build:
+
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+./arch/compile.sh
+```
+
+Install:
+
+```bash
+sudo pacman -U ./arch/.result/ll-connect-wireless-*.pkg.tar.zst
+```
+
+Enable and run user service:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now ll-connect-wireless.service
+```
+
+### Publishing your build (fork workflow)
+
+If this is not your repository, you cannot publish releases to the upstream project unless the owner grants you permissions.
+You can still publish your own builds from a fork:
+
+1. Fork the repo and push your branch/tag.
+2. In your fork, create a GitHub Release from that tag.
+3. Upload your built artifacts (`.rpm`, `.deb`, `.pkg.tar.zst`) to the release.
+4. Share the fork release link, or open a PR and ask the upstream owner to publish an official release.
+
 ### Other distro
 
-Currently, the focus is on Fedora. If you would like to help package this for other distributions (AUR, .deb, etc.), feel free to open a Pull Request!
+If you would like to help package this for additional distributions, feel free to open a Pull Request!
 
 ---
 
@@ -91,6 +162,11 @@ Curve mode defaults:
 
 * `CPU_FAN_CURVE=50:27,60:37,90:70,95:100`
 * `GPU_FAN_CURVE=35:30,60:40,70:60,75:90`
+
+Linear mode defaults:
+
+* `CPU_LINEAR=35:10,80:70`
+* `GPU_LINEAR=35:25,75:90`
 
 `GPU_TEMP_MACS` is a list of fan-group MAC addresses that should use GPU temperature instead of CPU temperature.
 If a MAC is not listed, it uses the CPU curve by default.
@@ -150,7 +226,7 @@ Fan Address       | Fans | Cur % | Tgt % | RPM
 4. GPU temperature is read via `nvidia-smi` (if available)
 5. Target PWM is calculated from configured curves
 6. Fan groups in `GPU_TEMP_MACS` use the GPU curve; all others use CPU curve
-7. Fan speeds ramp smoothly to avoid sudden changes
+7. Fan speeds are updated immediately based on current temperature mapping
 8. State is exposed to the CLI via a Unix socket
 
 ---
