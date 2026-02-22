@@ -1,0 +1,10 @@
+Package: @NAME@
+Version: @VERSION@-@RELEASE@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Depends: libusb-1.0-0, systemd, bash-completion
+Maintainer: Yoinky3000
+Homepage: https://github.com/Yoinky3000/LL-Connect-Wireless
+Description: Linux L-Connect Wireless daemon and CLI
+ User-space daemon and CLI for controlling Lian Li Wireless fans on Linux.

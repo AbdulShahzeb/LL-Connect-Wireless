@@ -1,4 +1,3 @@
-
 import argparse
 from pathlib import Path
 from typing import List
@@ -9,10 +8,12 @@ import re
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CLI_MD = ROOT_DIR / "CLI.md"
 
-ANSI_ESCAPE = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+ANSI_ESCAPE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
 
 def strip_ansi(text: str) -> str:
-    return ANSI_ESCAPE.sub('', text)
+    return ANSI_ESCAPE.sub("", text)
+
 
 def has_subparsers(parser: argparse.ArgumentParser):
     for action in parser._actions:
@@ -37,10 +38,7 @@ def collect_group_parsers(parser: argparse.ArgumentParser, command_path: List[st
             if isinstance(action, argparse._SubParsersAction):
                 for name, subparser in action.choices.items():
                     output.extend(
-                        collect_group_parsers(
-                            subparser,
-                            command_path + [name]
-                        )
+                        collect_group_parsers(subparser, command_path + [name])
                     )
 
     return output

@@ -32,15 +32,11 @@ my pc is built with Lian Li SL120 V3, which is controlled wirelessly with the us
 
 * Direct USB control via `libusb`
 * Wireless fan detection and monitoring
-* Temperature-based PWM control
+* Temperature-based PWM control (CPU + optional GPU source routing)
+* 4-point curve mode with linear interpolation between points
 * Smooth fan speed ramping (damping)
 * Runs as a systemd service
 * CLI for real-time status display
-
-> [!NOTE]
-> Currently the pwm is controlled base on a linear curve from `20 / 255 (7.84%)` PWM at 35°C to `175 / 255 (68.63%)` PWM at 85°C
-> 
-> Configuration for the curve will be added in the future
 
 ---
 
@@ -85,12 +81,50 @@ Full CLI reference can be found here:
 
 ---
 
+## Configuration
+
+Config file path:
+
+`~/.config/ll-connect-wireless/config.json`
+
+Curve mode defaults:
+
+* `CPU_FAN_CURVE=50:27,60:37,90:70,95:100`
+* `GPU_FAN_CURVE=35:30,60:40,70:60,75:90`
+
+`GPU_TEMP_MACS` is a list of fan-group MAC addresses that should use GPU temperature instead of CPU temperature.
+If a MAC is not listed, it uses the CPU curve by default.
+
+Example:
+
+```json
+{
+    "mode": "curve",
+    "CPU_FAN_CURVE": "50:27,60:37,90:70,95:100",
+    "GPU_FAN_CURVE": "35:30,60:40,70:60,75:90",
+    "GPU_TEMP_MACS": [
+        "58:cc:1e:a7:14:54"
+    ]
+}
+```
+
+Curve format:
+
+* Format: `temp_c:percent,temp_c:percent,temp_c:percent,temp_c:percent`
+* Each step is a temperature (Celsius) and fan speed (0-100%).
+* Values between steps are linearly interpolated.
+* Temperatures at or below the first step use that step's speed.
+* Temperatures at or above the last step use that step's speed.
+
+---
+
 ## Stat Monitoring
 
 You will see something like this when you run the monitor command:
 
 ```
 CPU Temp: 52.0 °C
+GPU Temp: 48.0 °C
 
 Fan Address       | Fans | Cur % | Tgt % | RPM
 --------------------------------------------------------
@@ -113,9 +147,11 @@ Fan Address       | Fans | Cur % | Tgt % | RPM
 1. Daemon communicates directly with the wireless controller over USB
 2. Device state is polled periodically
 3. CPU temperature is read from the system
-4. Target PWM is calculated
-5. Fan speeds ramp smoothly to avoid sudden changes
-6. State is exposed to the CLI via a Unix socket
+4. GPU temperature is read via `nvidia-smi` (if available)
+5. Target PWM is calculated from configured curves
+6. Fan groups in `GPU_TEMP_MACS` use the GPU curve; all others use CPU curve
+7. Fan speeds ramp smoothly to avoid sudden changes
+8. State is exposed to the CLI via a Unix socket
 
 ---
 
@@ -123,7 +159,6 @@ Fan Address       | Fans | Cur % | Tgt % | RPM
 
 Planned features:
 
-* Custom Curve
 * Per-channel custom curves
 * GUI frontend (optional)
 
