@@ -68,9 +68,8 @@ sudo dnf install *.rpm
 
 ### After installation:
 
-* The service will start automatically
-* Fan control begins immediately
-* No manual configuration is required
+* run `start` command to start the service
+* you can also use `enable` command to enable the service so that it will keep running if your computer restarted
 
 ### Other distro
 
