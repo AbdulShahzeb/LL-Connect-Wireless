@@ -7,7 +7,7 @@ import subprocess
 from typing import Optional
 import httpx
 from utils import CACHE_DIR, CONFIG_DIR, SOCKET_PATH, check_latest_version, get_build_identity, load_settings, parse_curve_input, save_settings
-from models import FanMode, Settings, SystemStatus, VersionInfo, VersionStatus
+from models import FanMode, LinearMode, Settings, SystemStatus, VersionInfo, VersionStatus
 from vars import APP_RAW_VERSION, APP_NAME, APP_ALIAS
 import shtab
 
@@ -250,24 +250,26 @@ if __name__ == "__main__":
         
         subparsers.add_parser("monitor", help="show live fan monitor (Default to it if no command is provided)")
 
-        subparsers.add_parser("uninstall", help="Stop, disable and remove llcw")
+        subparsers.add_parser("uninstall", help="stop, disable and remove llcw")
 
-        settings_parser = subparsers.add_parser("settings", help="Manage configuration")
+        settings_parser = subparsers.add_parser("settings", help="Manage settings")
         settings_sub = settings_parser.add_subparsers(dest="settings_cmd")
         settings_sub.add_parser(
             "set-mode",
-            help="Set control mode"
+            help="set control mode"
         ).add_argument(
             "mode",
             choices=[m.value for m in FanMode],
-            help="Control mode"
+            help="control mode"
         )
+        settings_sub.add_parser("reset", help="reset the settings")
         
         linear_parser = settings_sub.add_parser("linear", help="Linear mode settings")
         linear_sub = linear_parser.add_subparsers(dest="linear_cmd")
 
-        linear_set = linear_sub.add_parser("set-curve", help="Set linear curve")
-        linear_set.add_argument("curve", help="Format: 'minT:minP,maxT:maxP', or just give a single pwm percentage for fixed pwm")
+        linear_sub.add_parser("reset", help="reset linear curve")
+        linear_set = linear_sub.add_parser("set-curve", help="set linear curve")
+        linear_set.add_argument("curve", help="format: 'minT:minP,maxT:maxP', or just give a single pwm percentage for fixed pwm")
 
         parser.add_argument(
             "--print-completion",
@@ -314,7 +316,10 @@ if __name__ == "__main__":
                 save_settings(settings)
                 reload_service_settings()
                 print(f"Mode updated to {args.mode}")
-
+            elif args.settings_cmd == "reset":
+                save_settings(Settings())
+                reload_service_settings()
+                print(f"Finished reset")
             elif args.settings_cmd == "linear":
                 if args.linear_cmd == "set-curve":
                     try:
@@ -325,6 +330,11 @@ if __name__ == "__main__":
                         print("Linear curve updated successfully.")
                     except Exception as e:
                         print(f"Error: {e}")
+                elif args.linear_cmd == "reset":
+                    settings.linear = LinearMode()
+                    save_settings(settings)
+                    reload_service_settings()
+                    print(f"Finished reset linear curve")
                 else:
                     show_linear_settings(settings)
             else:
