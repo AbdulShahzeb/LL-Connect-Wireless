@@ -49,6 +49,7 @@ async def root():
 
 
 def start_api_server():
+    os.makedirs(SOCKET_DIR, exist_ok=True)
     uvicorn.run(app, uds=SOCKET_PATH, log_level="warning")
 
 
@@ -76,7 +77,7 @@ MAX_DEVICES_PAGE = 10
 # MAX_TEMP = 85.0
 SETTINGS = load_settings()
 
-LOOP_INTERVAL = 0.2
+LOOP_INTERVAL = 0.5
 
 
 # ==============================
@@ -153,7 +154,7 @@ def fetch_page(rx: usb.core.Device, page_count: int):
     return buf
 
 
-def list_fans(rx: usb.core.Device, target_pwm: int = 0):
+def list_fans(rx: usb.core.Device, last_fans_data: List[Fan] = []):
     payload = fetch_page(rx, 1)
     if not payload or payload is None or payload == b"":
         return []
@@ -169,6 +170,7 @@ def list_fans(rx: usb.core.Device, target_pwm: int = 0):
             continue
 
         mac = ":".join(f"{b:02x}" for b in record[0:6])
+        previous_target_pwm = next((d for d in last_fans_data if d.mac == mac), 0)
         fans.append(
             Fan(
                 mac=mac,
@@ -183,7 +185,7 @@ def list_fans(rx: usb.core.Device, target_pwm: int = 0):
                     (record[32] << 8) | record[33],
                     (record[34] << 8) | record[35],
                 ],
-                target_pwm=target_pwm,
+                target_pwm=previous_target_pwm if not previous_target_pwm else previous_target_pwm.target_pwm,
                 is_bound=record[6:12] != b"\x00" * 6,
             )
         )
@@ -313,6 +315,7 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
     global SETTINGS
     last_fans_amount = 0
     warned_missing_gpu_temp = False
+    last_fans_data: List[Fan] = []
 
     err = 0
     while True:
@@ -362,11 +365,13 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
                 time.sleep(1)
                 continue
 
-            fans = list_fans(rx, 0)
+            fans = list_fans(rx, last_fans_data)
 
             if last_fans_amount != 0 and len(fans) == 0:
                 continue
             last_fans_amount = len(fans)
+
+            updated_fans: List[str] = []
 
             for f in fans:
                 mac = f.mac.lower()
@@ -377,11 +382,12 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
                     target_pwm = cpu_target_pwm
                 else:
                     target_pwm = f.pwm
+                if target_pwm != f.target_pwm: updated_fans.append(f.mac)
 
                 f.target_pwm = target_pwm
                 f.pwm = f.target_pwm
-
             for f in fans:
+                if not f.mac in updated_fans: continue
                 for i in range(len(fans)):
                     tx.write(USB_OUT, build_data(f, i))
                 time.sleep(0.1)
@@ -416,9 +422,10 @@ def fan_control_loop(rx: usb.core.Device, tx: usb.core.Device):
                     f"{rpm}"
                 )
             err = 0
-        except Exception:
+            last_fans_data = fans
+        except Exception as e:
             if err > 3:
-                raise Exception()
+                raise e
             else:
                 err += 1
         finally:
@@ -455,7 +462,7 @@ if __name__ == "__main__":
         tx = open_device(TX)
         rx = open_device(RX)
 
-        fans = list_fans(rx, 0)
+        fans = list_fans(rx, [])
         displayDetected(fans)
 
         time.sleep(5 if DEV_MODE else 0)

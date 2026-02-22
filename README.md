@@ -32,11 +32,11 @@ my pc is built with Lian Li SL120 V3, which is controlled wirelessly with the us
 
 * Direct USB control via `libusb`
 * Wireless fan detection and monitoring
-* Temperature-based PWM control (CPU + optional GPU source routing)
+* Temperature-based PWM control (CPU + GPU if specified)
 * 4-point curve mode with linear interpolation between points
 * Immediate fan response to temperature changes
 * Runs as a systemd service
-* CLI for real-time status display
+* CLI for managing the app and real-time status display
 
 ---
 
@@ -59,7 +59,16 @@ Go to the [Release](https://github.com/Yoinky3000/LL-Connect-Wireless/releases/l
 Download the rpm package, and install it with dnf:
 
 ```bash
-sudo dnf install *.rpm
+sudo dnf install *.fcXX.x86_64.rpm
+```
+
+### Ubuntu 22/24, Debian 12
+
+Go to the [Release](https://github.com/Yoinky3000/LL-Connect-Wireless/releases/latest) page<br />
+Download the deb package, and install it with apt:
+
+```bash
+sudo apt install *.deb
 ```
 
 ### After installation:
@@ -88,7 +97,7 @@ pip install -r requirements.txt
 Install:
 
 ```bash
-sudo apt install ./deb/.result/ll-connect-wireless_*.deb
+sudo apt install ./deb/.result/ll-connect-wireless-*.deb
 ```
 
 Enable and run user service:
@@ -127,16 +136,6 @@ Enable and run user service:
 systemctl --user daemon-reload
 systemctl --user enable --now ll-connect-wireless.service
 ```
-
-### Publishing your build (fork workflow)
-
-If this is not your repository, you cannot publish releases to the upstream project unless the owner grants you permissions.
-You can still publish your own builds from a fork:
-
-1. Fork the repo and push your branch/tag.
-2. In your fork, create a GitHub Release from that tag.
-3. Upload your built artifacts (`.rpm`, `.deb`, `.pkg.tar.zst`) to the release.
-4. Share the fork release link, or open a PR and ask the upstream owner to publish an official release.
 
 ### Other distro
 
@@ -214,7 +213,7 @@ Fan Address       | Fans | Cur % | Tgt % | RPM
 
 * The daemon runs as **non-root**
 * USB permissions are managed via udev rules
-* CLI access does **not** require root, except for start/stop/restart the service and update the app
+* CLI access does **not** require root, except for update/uninstall
 
 ---
 
@@ -236,7 +235,7 @@ Fan Address       | Fans | Cur % | Tgt % | RPM
 Planned features:
 
 * Per-channel custom curves
-* GUI frontend (optional)
+* GUI frontend
 
 ---
 

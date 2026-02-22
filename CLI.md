@@ -20,7 +20,8 @@ positional arguments:
     start               start the llcw service
     stop                stop the llcw service
     restart             restart the llcw service
-    monitor             show live fan monitor (Default to it if no command is provided)
+    monitor             show live fan monitor (Default to it if no command
+                        is provided)
     uninstall           stop, disable and remove llcw
     settings            Manage settings
 
@@ -29,20 +30,24 @@ options:
   --print-completion {bash,zsh,tcsh}
                         print shell completion script
 
-'llcw' is also an alias command to 'll-connect-wireless'. You can also use 'll-connect-
-wireless' without arguments to see live monitor.
+'llcw' is also an alias command to 'll-connect-wireless'. You can also use
+'ll-connect-wireless' without arguments to see live monitor.
 ```
 
 ## `ll-connect-wireless settings`
 
 ```bash
-usage: gen_cli_doc.py settings [-h] {set-mode,reset,linear} ...
+usage: gen_cli_doc.py settings [-h]
+                               {set-mode,reset,linear,curve,set-gpu-macs,clear-gpu-macs} ...
 
 positional arguments:
-  {set-mode,reset,linear}
+  {set-mode,reset,linear,curve,set-gpu-macs,clear-gpu-macs}
     set-mode            set control mode
     reset               reset the settings
     linear              Linear mode settings
+    curve               Curve mode settings
+    set-gpu-macs        set GPU-routed MAC addresses
+    clear-gpu-macs      clear GPU-routed MAC addresses
 
 options:
   -h, --help            show this help message and exit
@@ -51,13 +56,32 @@ options:
 ## `ll-connect-wireless settings linear`
 
 ```bash
-usage: gen_cli_doc.py settings linear [-h] {reset,set-curve} ...
+usage: gen_cli_doc.py settings linear [-h]
+                                      {reset,reset-gpu-curve,set-curve,set-gpu-curve} ...
 
 positional arguments:
-  {reset,set-curve}
-    reset            reset linear curve
-    set-curve        set linear curve
+  {reset,reset-gpu-curve,set-curve,set-gpu-curve}
+    reset               reset linear curve
+    reset-gpu-curve     reset GPU linear curve
+    set-curve           set linear curve
+    set-gpu-curve       set GPU linear curve
 
 options:
-  -h, --help         show this help message and exit
+  -h, --help            show this help message and exit
+```
+
+## `ll-connect-wireless settings curve`
+
+```bash
+usage: gen_cli_doc.py settings curve [-h]
+                                     {reset,set-cpu-curve,set-gpu-curve} ...
+
+positional arguments:
+  {reset,set-cpu-curve,set-gpu-curve}
+    reset               reset CPU/GPU curves
+    set-cpu-curve       set CPU curve
+    set-gpu-curve       set GPU curve
+
+options:
+  -h, --help            show this help message and exit
 ```

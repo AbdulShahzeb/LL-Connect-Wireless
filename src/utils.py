@@ -29,7 +29,23 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 
 
 def get_build_identity():
-    arch = platform.machine()
+    ARCH_MAP = {
+        "x86_64": {
+            "rpm": "x86_64",
+            "deb": "amd64",
+        },
+        "aarch64": {
+            "rpm": "aarch64",
+            "deb": "arm64",
+        },
+        "armv7l": {
+            "rpm": "armv7hl",
+            "deb": "armhf",
+        },
+    }
+
+    machine = platform.machine()
+
     dist_info = {}
     try:
         with open("/etc/os-release") as f:
@@ -41,23 +57,25 @@ def get_build_identity():
         pass
 
     os_id = dist_info.get("ID", "linux")
+    os_ver = dist_info.get("VERSION_ID", "")
 
+    dist_tag = f"{os_id}{os_ver}"
     if os_id in ["fedora", "centos", "rhel"]:
-        ext = ".rpm"
+        ext = "rpm"
         try:
             dist_tag = (
                 subprocess.check_output(["rpm", "-E", "%{?dist}"], text=True)
                 .strip()
                 .strip(".")
             )
-        except:
-            dist_tag = f"fc{dist_info.get('VERSION_ID', '')}"
+        except Exception:
+            pass
     elif os_id in ["ubuntu", "debian"]:
-        ext = ".deb"
-        dist_tag = os_id + dist_info.get("VERSION_ID", "")
+        ext = "deb"
     else:
-        ext = ".tar.gz"
-        dist_tag = "linux"
+        ext = "tar.gz"
+
+    arch = ARCH_MAP.get(machine, {}).get(ext, "unknown")
 
     return dist_tag, arch, ext
 
@@ -165,7 +183,7 @@ def fetch_github_tag():
 
         releases: List[VersionInfo] = []
         dist, arch, ext = get_build_identity()
-        match_pattern = f"{dist}.{arch}{ext}"
+        match_pattern = '.'.join([dist, arch, ext])
         for r in release_res:
             assets = r.get("assets", [])
             installer_url = None
@@ -340,3 +358,6 @@ def parse_curve_input(curve: str) -> LinearMode:
         raise ValueError(
             "Invalid format. Use minTemp:minPwm,maxTemp:maxPwm or single integer."
         )
+    
+if __name__ == "__main__":
+    print(get_build_identity())

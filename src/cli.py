@@ -47,9 +47,12 @@ def fetch_state() -> SystemStatus:
 
 
 def reload_service_settings():
-    transport = httpx.HTTPTransport(uds=SOCKET_PATH)
-    with httpx.Client(transport=transport) as client:
-        client.post("http://localhost/reload-settings")
+    try:
+        transport = httpx.HTTPTransport(uds=SOCKET_PATH)
+        with httpx.Client(transport=transport) as client:
+            client.post("http://localhost/reload-settings")
+    except:
+        print("\033[93mUnable to inform the changes to daemon, maybe it's not running.\033[0m")
 
 
 def render(status: SystemStatus):
@@ -159,7 +162,7 @@ def run_update(remote_ver: Optional[VersionStatus]):
         )
         return
 
-    tmp_path = f"/tmp/{APP_ALIAS}_update{ext}"
+    tmp_path = f"/tmp/{APP_ALIAS}_update.{ext}"
 
     print(f"\n\033[1mUpdate Found: {remote_ver.data.raw_tag}\033[0m")
     print(f"Download URL: {url}")
@@ -282,8 +285,12 @@ def run_uninstall():
     shutil.rmtree(CONFIG_DIR, ignore_errors=True)
     shutil.rmtree(CACHE_DIR, ignore_errors=True)
     print(f"Uninstalling {APP_ALIAS}...")
-    if ext == ".rpm":
+    if ext == "rpm":
         subprocess.run(["sudo", "dnf", "remove", "-y", APP_NAME], check=True)
+    elif ext == "deb":
+        subprocess.run(["sudo", "apt", "remove", "-y", APP_NAME], check=True)
+    else:
+        print("Automatic uninstall not supported for this platform.")
     print("Uninstall completed")
 
 
@@ -350,7 +357,7 @@ def generate_parser():
     curve_parser = settings_sub.add_parser("curve", help="Curve mode settings")
     curve_sub = curve_parser.add_subparsers(dest="curve_cmd")
 
-    curve_sub.add_parser("reset", help="reset CPU/GPU curves and GPU MAC routing")
+    curve_sub.add_parser("reset", help="reset CPU/GPU curves")
     cpu_curve_set = curve_sub.add_parser("set-cpu-curve", help="set CPU curve")
     cpu_curve_set.add_argument(
         "curve", help="format: 'temp:percent,temp:percent,temp:percent,temp:percent'"
@@ -359,13 +366,13 @@ def generate_parser():
     gpu_curve_set.add_argument(
         "curve", help="format: 'temp:percent,temp:percent,temp:percent,temp:percent'"
     )
-    gpu_macs_set = curve_sub.add_parser(
+    gpu_macs_set = settings_sub.add_parser(
         "set-gpu-macs", help="set GPU-routed MAC addresses"
     )
     gpu_macs_set.add_argument(
         "macs", help="format: 'aa:bb:cc:dd:ee:ff,11:22:33:44:55:66'"
     )
-    curve_sub.add_parser("clear-gpu-macs", help="clear GPU-routed MAC addresses")
+    settings_sub.add_parser("clear-gpu-macs", help="clear GPU-routed MAC addresses")
 
     parser.add_argument(
         "--print-completion",
@@ -476,30 +483,29 @@ if __name__ == "__main__":
                         print("GPU curve updated successfully.")
                     except Exception as e:
                         print(f"Error: {e}")
-                elif args.curve_cmd == "set-gpu-macs":
-                    try:
-                        settings.gpu_temp_macs = [
-                            m.strip() for m in args.macs.split(",") if m.strip()
-                        ]
-                        save_settings(settings)
-                        reload_service_settings()
-                        print("GPU MAC routing list updated successfully.")
-                    except Exception as e:
-                        print(f"Error: {e}")
-                elif args.curve_cmd == "clear-gpu-macs":
-                    settings.gpu_temp_macs = []
-                    save_settings(settings)
-                    reload_service_settings()
-                    print("Cleared GPU MAC routing list.")
                 elif args.curve_cmd == "reset":
                     settings.cpu_curve = default_cpu_curve()
                     settings.gpu_curve = default_gpu_curve()
-                    settings.gpu_temp_macs = []
                     save_settings(settings)
                     reload_service_settings()
                     print("Finished reset curve mode settings")
                 else:
                     show_curve_settings(settings)
+            elif args.settings_cmd == "set-gpu-macs":
+                try:
+                    settings.gpu_temp_macs = [
+                        m.strip() for m in args.macs.split(",") if m.strip()
+                    ]
+                    save_settings(settings)
+                    reload_service_settings()
+                    print("GPU MAC routing list updated successfully.")
+                except Exception as e:
+                    print(f"Error: {e}")
+            elif args.settings_cmd == "clear-gpu-macs":
+                settings.gpu_temp_macs = []
+                save_settings(settings)
+                reload_service_settings()
+                print("Cleared GPU MAC routing list.")
             else:
                 show_settings(settings)
         else:

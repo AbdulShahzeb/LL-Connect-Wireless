@@ -92,6 +92,8 @@ cp "$ROOT_DIR/LICENSE" "$DEB_ROOT/usr/share/doc/$NAME/copyright"
 cp "$ROOT_DIR/README.md" "$DEB_ROOT/usr/share/doc/$NAME/README.md"
 
 echo "==> Building .deb"
-dpkg-deb --build "$DEB_ROOT" "$RES_DIR/${NAME}_${COMPILE_VER}-${RELEASE}_${DEB_ARCH}.deb"
+OS_ID="$(. /etc/os-release && echo "$ID")"
+OS_VER="$(. /etc/os-release && echo "$VERSION_ID")"
+dpkg-deb --build "$DEB_ROOT" "$RES_DIR/${NAME}-${COMPILE_VER}-${RELEASE}.${OS_ID}${OS_VER}.${DEB_ARCH}.deb"
 
 echo "==> Done!"
