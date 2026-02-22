@@ -80,56 +80,9 @@ Currently, the focus is on Fedora. If you would like to help package this for ot
 
 ## CLI Usage
 
-Get command usages:
+Full CLI reference can be found here:
 
-```bash
-ll-connect-wireless help
-```
-
-Get info of llcw:
-
-```bash
-ll-connect-wireless info
-```
-
-Update llcw:
-
-```bash
-ll-connect-wireless update
-```
-
-Check service status:
-
-```bash
-ll-connect-wireless status
-```
-
-Restart the service:
-
-```bash
-ll-connect-wireless restart
-```
-
-Start the service:
-
-```bash
-ll-connect-wireless start
-```
-
-Stop the service:
-
-```bash
-ll-connect-wireless stop
-```
-
-Monitor the stat of the controller:
-
-```bash
-ll-connect-wireless (or ll-connect-wireless monitor)
-```
-
-> [!NOTE]
-> You can also use `llcw` instead of `ll-connect-wireless`
+[CLI.md](CLI.md)
 
 ---
 

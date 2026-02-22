@@ -221,61 +221,65 @@ def run_uninstall():
     run_systemctl("disable")
     print("Uninstall completed")
 
+def generate_parser():
+    parser = argparse.ArgumentParser(
+        description=f"LL-Connect-Wireless (LLCW) CLI (Version: {APP_RAW_VERSION})",
+        epilog=f"'{APP_ALIAS}' is also an alias command to '{APP_NAME}'.\n\nYou can also use '{APP_NAME}' without arguments to see live monitor."
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    subparsers.add_parser("help", help="same as -h/--help")
+
+    subparsers.add_parser("info", help=f"show app version info and changelog of {APP_ALIAS}")
+
+    subparsers.add_parser("update", help=f"check and update {APP_ALIAS} to latest version")
+
+    subparsers.add_parser("status", help=f"show systemd service status")
+
+    subparsers.add_parser("enable", help=f"enable {APP_ALIAS} service and start it")
+
+    subparsers.add_parser("disable", help=f"disable {APP_ALIAS} service")
+
+    subparsers.add_parser("start", help=f"start the {APP_ALIAS} service")
+
+    subparsers.add_parser("stop", help=f"stop the {APP_ALIAS} service")
+
+    subparsers.add_parser("restart", help=f"restart the {APP_ALIAS} service")
+
+    subparsers.add_parser("monitor", help="show live fan monitor (Default to it if no command is provided)")
+
+    subparsers.add_parser("uninstall", help=f"stop, disable and remove {APP_ALIAS}")
+
+    settings_parser = subparsers.add_parser("settings", help="Manage settings")
+    settings_sub = settings_parser.add_subparsers(dest="settings_cmd")
+    settings_sub.add_parser(
+        "set-mode",
+        help="set control mode"
+    ).add_argument(
+        "mode",
+        choices=[m.value for m in FanMode],
+        help="control mode"
+    )
+    settings_sub.add_parser("reset", help="reset the settings")
+        
+    linear_parser = settings_sub.add_parser("linear", help="Linear mode settings")
+    linear_sub = linear_parser.add_subparsers(dest="linear_cmd")
+
+    linear_sub.add_parser("reset", help="reset linear curve")
+    linear_set = linear_sub.add_parser("set-curve", help="set linear curve")
+    linear_set.add_argument("curve", help="format: 'minT:minP,maxT:maxP', or just give a single pwm percentage for fixed pwm")
+
+    parser.add_argument(
+        "--print-completion",
+        choices=shtab.SUPPORTED_SHELLS,
+        help="print shell completion script",
+    )
+    return parser
+
 if __name__ == "__main__":
     try:
-        parser = argparse.ArgumentParser(
-            description=f"LL-Connect-Wireless (LLCW) CLI (Version: {APP_RAW_VERSION})",
-            epilog=f"You can also use '{APP_NAME}' without arguments to see live monitor.\n\n'{APP_ALIAS}' is also an alias command to '{APP_NAME}'"
-        )
-        
-        subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-        subparsers.add_parser("help", help="same as -h/--help")
-
-        subparsers.add_parser("info", help=f"show app version info and changelog of {APP_ALIAS}")
-
-        subparsers.add_parser("update", help=f"check and update {APP_ALIAS} to latest version")
-
-        subparsers.add_parser("status", help=f"show systemd service status")
-
-        subparsers.add_parser("enable", help=f"enable {APP_ALIAS} service and start it")
-
-        subparsers.add_parser("disable", help=f"disable {APP_ALIAS} service")
-
-        subparsers.add_parser("start", help=f"start the {APP_ALIAS} service")
-
-        subparsers.add_parser("stop", help=f"stop the {APP_ALIAS} service")
-
-        subparsers.add_parser("restart", help=f"restart the {APP_ALIAS} service")
-        
-        subparsers.add_parser("monitor", help="show live fan monitor (Default to it if no command is provided)")
-
-        subparsers.add_parser("uninstall", help=f"stop, disable and remove {APP_ALIAS}")
-
-        settings_parser = subparsers.add_parser("settings", help="Manage settings")
-        settings_sub = settings_parser.add_subparsers(dest="settings_cmd")
-        settings_sub.add_parser(
-            "set-mode",
-            help="set control mode"
-        ).add_argument(
-            "mode",
-            choices=[m.value for m in FanMode],
-            help="control mode"
-        )
-        settings_sub.add_parser("reset", help="reset the settings")
-        
-        linear_parser = settings_sub.add_parser("linear", help="Linear mode settings")
-        linear_sub = linear_parser.add_subparsers(dest="linear_cmd")
-
-        linear_sub.add_parser("reset", help="reset linear curve")
-        linear_set = linear_sub.add_parser("set-curve", help="set linear curve")
-        linear_set.add_argument("curve", help="format: 'minT:minP,maxT:maxP', or just give a single pwm percentage for fixed pwm")
-
-        parser.add_argument(
-            "--print-completion",
-            choices=shtab.SUPPORTED_SHELLS,
-            help="print shell completion script",
-        )
+        parser = generate_parser()
 
         args = parser.parse_args()
 
