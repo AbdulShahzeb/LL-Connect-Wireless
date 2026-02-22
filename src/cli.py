@@ -1,3 +1,4 @@
+import os
 import shutil
 import sys
 import time
@@ -63,12 +64,17 @@ def run_monitor():
                 sys.exit(1)
         time.sleep(1)
 
-def run_systemctl(action: str):
+def run_systemctl(action: str, service = True):
     service_name = f"{APP_NAME}.service"
     
     try:
-        print(f"Running: systemctl --user {action} {service_name}...")
-        subprocess.run(["systemctl", "--user", action, service_name], check=False)
+        command = ["systemctl", "--user", action]
+        display = f"systemctl --user {action}"
+        if service:
+            command.append(service_name)
+            display += f" {service_name}"
+        print(f"Running: {display}...")
+        subprocess.run(command, check=False)
         print("Done.")
     except subprocess.CalledProcessError as e:
         print(f"Error executing command: {e}")
@@ -139,7 +145,6 @@ def run_update(remote_ver: Optional[VersionStatus]):
                         f.write(chunk)
         
         print("Download complete. Starting installation...")
-        
         if ext == ".rpm":
             subprocess.run(["sudo", "dnf", "install", "-y", tmp_path], check=True)
         elif ext == ".deb":
@@ -148,6 +153,14 @@ def run_update(remote_ver: Optional[VersionStatus]):
             print(f"\033[93mAutomatic installation not supported for {ext}.\033[0m")
             print(f"Please install the file manually from: {tmp_path}")
             return
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        print("Reloading systemd...")
+        run_systemctl("daemon-reload", False)
+        print("Refreshing service (if running)...")
+        run_systemctl("try-restart")
         print("\033[92mLL-Connect-Wireless updated successfully!\033[0m")
 
     except httpx.HTTPError as e:
@@ -192,7 +205,6 @@ def show_linear_settings(settings: Settings):
 
 def run_uninstall():
     dist_tag, arch, ext = get_build_identity()
-    service_name = f"{APP_NAME}.service"
 
     print("Stopping service...")
     run_systemctl("stop")
@@ -286,7 +298,6 @@ if __name__ == "__main__":
             run_systemctl("status")
         elif args.command == "enable":
             run_systemctl("enable")
-            run_systemctl("start")
         elif args.command == "disable":
             run_systemctl("disable")
         elif args.command == "start":
