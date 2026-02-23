@@ -186,9 +186,9 @@ def run_update(remote_ver: Optional[VersionStatus]):
                         f.write(chunk)
 
         print("Download complete. Starting installation...")
-        if ext == ".rpm":
+        if ext == "rpm":
             subprocess.run(["sudo", "dnf", "install", "-y", tmp_path], check=True)
-        elif ext == ".deb":
+        elif ext == "deb":
             subprocess.run(["sudo", "apt", "install", "-y", tmp_path], check=True)
         else:
             print(f"\033[93mAutomatic installation not supported for {ext}.\033[0m")
