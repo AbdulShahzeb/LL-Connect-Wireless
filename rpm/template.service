@@ -8,6 +8,8 @@ ExecStart=/usr/libexec/@ALIAS@/@NAME@d
 Restart=always
 RestartSec=1
 KillMode=control-group
+RuntimeDirectory=@NAME@
+RuntimeDirectoryMode=0755
 
 # Clean, predictable logging
 StandardOutput=journal

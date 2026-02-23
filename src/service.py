@@ -458,9 +458,14 @@ if __name__ == "__main__":
                 os.chmod(SOCKET_PATH, 0o666)
             except OSError:
                 pass
-
-        tx = open_device(TX)
-        rx = open_device(RX)
+        
+        try:
+            tx = open_device(TX)
+            rx = open_device(RX)
+        except Exception as e:
+            print("Unable to open lian li wireless controller")
+            print(e)
+            sys.exit(1)
 
         fans = list_fans(rx, [])
         displayDetected(fans)

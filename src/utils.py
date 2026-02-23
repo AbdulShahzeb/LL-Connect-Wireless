@@ -20,7 +20,7 @@ from vars import APP_NAME, APP_RAW_VERSION, APP_RC, APP_VERSION
 
 DEV_MODE = os.getenv("DEV")
 ROOT_DIR = Path(os.path.realpath(__file__)).parent
-SOCKET_DIR = (ROOT_DIR / ".sock") if DEV_MODE else Path(f"/run/user/{os.getuid()}")
+SOCKET_DIR = (ROOT_DIR / ".sock") if DEV_MODE else (Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / APP_NAME)
 SOCKET_PATH = str(SOCKET_DIR / "ll-connect-wireless.sock")
 CACHE_DIR = Path(os.path.expanduser("~/.cache/")) / APP_NAME
 CACHE_PATH = CACHE_DIR / "remoteVer.json"
