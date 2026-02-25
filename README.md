@@ -167,8 +167,14 @@ Linear mode defaults:
 * `CPU_LINEAR=35:10,80:70`
 * `GPU_LINEAR=35:25,75:90`
 
-`GPU_TEMP_MACS` is a list of fan-group MAC addresses that should use GPU temperature instead of CPU temperature.
-If a MAC is not listed, it uses the CPU curve by default.
+Fan groups can be assigned to different temperature sources:
+
+* **CPU** (default): fan speed based on CPU temperature
+* **GPU**: fan speed based on GPU temperature
+* **Mix**: fan speed = max of CPU and GPU computed fan speeds
+
+`GPU_MACS` and `MIX_MACS` store the MAC addresses of fan groups assigned to each source.
+Use `llcw settings set-source <fan_id> <cpu|gpu|mix>` to assign fans by their monitor ID instead of typing MAC addresses.
 
 Example:
 
@@ -177,9 +183,10 @@ Example:
     "mode": "curve",
     "CPU_FAN_CURVE": "50:27,60:37,90:70,95:100",
     "GPU_FAN_CURVE": "35:30,60:40,70:60,75:90",
-    "GPU_TEMP_MACS": [
+    "GPU_MACS": [
         "58:cc:1e:a7:14:54"
-    ]
+    ],
+    "MIX_MACS": []
 }
 ```
 
@@ -201,10 +208,10 @@ You will see something like this when you run the monitor command:
 CPU Temp: 52.0 °C
 GPU Temp: 48.0 °C
 
-Fan Address       | Fans | Cur % | Tgt % | RPM
---------------------------------------------------------
-58:cc:1e:a7:14:54 |    3 |   32% |   35% | 712, 708, 710
-2e:c1:1e:a7:14:54 |    4 |   32% |   35% | 703, 701, 699, 705
+ ID  Fan Address       | Fans | Src | Cur % | Tgt % | RPM
+------------------------------------------------------------------------------
+  0  58:cc:1e:a7:14:54 |    3 | CPU |   32% |   35% | 712, 708, 710
+  1  2e:c1:1e:a7:14:54 |    4 | GPU |   32% |   35% | 703, 701, 699, 705
 ```
 
 ---
@@ -224,7 +231,7 @@ Fan Address       | Fans | Cur % | Tgt % | RPM
 3. CPU temperature is read from the system
 4. GPU temperature is read via `nvidia-smi` (if available)
 5. Target PWM is calculated from configured curves
-6. Fan groups in `GPU_TEMP_MACS` use the GPU curve; all others use CPU curve
+6. Fan groups use their assigned temperature source (CPU, GPU, or mix)
 7. Fan speeds are updated immediately based on current temperature mapping
 8. State is exposed to the CLI via a Unix socket
 
